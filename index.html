@@ -644,9 +644,12 @@ function renderPinList(scrollBottom=true){
 
 /* ===== counties load ===== */
 (async function(){ await loadCounties(); })();
-<div id="err" class="err"></div>
-</div> <!-- /mapwrap -->
-</div> <!-- /app -->
+<div id="app">
+  <div id="mapwrap">
+    <!-- mlmap / map + panels + HUD -->
+    <div id="err" class="err"></div>
+  </div>
+</div>
 
 <script src="app.js"></script>
 </body>
