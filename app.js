@@ -52,7 +52,7 @@ function webglOk(){
 
 /* ===================== map init ===================== */
 function initMap(){
-  const start=[45.85,-123.49];
+  const start=[45.85,-123.49], startZoom=9;
 
   if(webglOk()){
     useML=true; $('#map').style.display='none';
@@ -82,7 +82,7 @@ function initMap(){
 
   } else {
     useML=false; $('#mlmap').style.display='none';
-    lmap=L.map('map', { renderer: L.canvas() }).setView(start,9);
+    lmap=L.map('map', { renderer: L.canvas() }).setView(start,startZoom);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(lmap);
     L.tileLayer('https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',{opacity:0.5}).addTo(lmap);
 
