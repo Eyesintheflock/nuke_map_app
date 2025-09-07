@@ -1,43 +1,24 @@
-// sw.js
-const CACHE_NAME = 'nuke-plan-v1';
-const CORE_ASSETS = [
-  './',
-  './index.html',
-  './manifest.webmanifest',
-  './icons/icon-192.png',
-  './icons/icon-512.png',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
-  'https://unpkg.com/leaflet.heat/dist/leaflet-heat.js',
-  'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js'
-];
+// sw.js — safe, opt-in only
+const VERSION = 'v5-' + Date.now();
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS)).then(()=>self.skipWaiting())
-  );
-});
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.map(k => k===CACHE_NAME?null:caches.delete(k))))
-  );
-  self.clients.claim();
-});
+// Only activate if URL contains enableSW=1
+self.addEventListener('install', e => self.skipWaiting());
+self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 
 self.addEventListener('fetch', (event) => {
-  const req = event.request;
-  if (req.method !== 'GET') return;
+  const u = new URL(event.request.url);
+  const enabled = u.searchParams.get('enableSW') === '1';
+  if (!enabled) return; // bypass cache entirely unless explicitly opted in
+
   event.respondWith(
-    caches.match(req).then((cached) => {
+    caches.open(VERSION).then(async cache => {
+      const cached = await cache.match(event.request);
       if (cached) return cached;
-      return fetch(req).then((resp) => {
-        const clone = resp.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(req, clone)).catch(()=>{});
-        return resp;
-      }).catch(() => {
-        return caches.match('./index.html');
-      });
+      const resp = await fetch(event.request);
+      if (resp.ok && event.request.method === 'GET' && resp.type !== 'opaque') {
+        cache.put(event.request, resp.clone());
+      }
+      return resp;
     })
   );
 });
