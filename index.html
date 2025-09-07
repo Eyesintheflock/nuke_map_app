@@ -642,15 +642,18 @@ function renderPinList(scrollBottom=true){
   if(scrollBottom) box.scrollTop=box.scrollHeight;
 }
 
-/* ===== counties load ===== */
-(async function(){ await loadCounties(); })();
-<div id="app">
-  <div id="mapwrap">
-    <!-- mlmap / map + panels + HUD -->
-    <div id="err" class="err"></div>
-  </div>
-</div>
+<!-- run the counties bootstrap that app.js expects -->
+  <script>
+    (async function () { await loadCounties(); })();
+  </script>
 
+  <!-- error toast lives inside the existing mapwrap (do NOT reopen #app/#mapwrap) -->
+  <div id="err" class="err"></div>
+
+</div><!-- /mapwrap -->
+</div><!-- /app -->
+
+<!-- Single external script include -->
 <script src="app.js"></script>
 </body>
 </html>
