@@ -1,9 +1,7 @@
-// sw.js — safe, opt-in caching only
+// sw.js — safe, opt-in caching only (prevents stale code)
 const VERSION = 'v6-' + Date.now();
-
 self.addEventListener('install', e => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
-
 self.addEventListener('fetch', event => {
   const u = new URL(event.request.url);
   if (u.searchParams.get('enableSW') !== '1') return; // no caching unless ?enableSW=1
