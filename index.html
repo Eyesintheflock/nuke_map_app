@@ -1,55 +1,61 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
-<title>Nuke Effects – West Coast (3D capable)</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+<title>Nuke Effects – Terrain 3D + Population + Shelter HUD</title>
 
-<!-- MapLibre GL (3D tilt/rotate) + demo style without API keys -->
+<!-- MapLibre GL (3D) + Leaflet fallback -->
 <link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet"/>
 <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
-
-<!-- Leaflet fallback -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+<!-- Turf.js for geometry & intersections -->
+<script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+
 <style>
-  :root{
-    --bg:#101114; --panel:#0f1318; --muted:#7e8a9a; --fg:#eaeef7; --accent:#2dd4bf;
-    --danger:#ef4444; --warn:#f59e0b; --ok:#22c55e;
-  }
-  html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial;}
-  #app{display:grid;grid-template-rows:auto 1fr; height:100%;}
-  #bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px;background:var(--panel);box-shadow:0 2px 0 #0008;z-index:9}
-  #bar .label{font-size:12px;opacity:.85;margin-right:4px}
-  #bar input, #bar select, #bar button{background:#0b0e12;border:1px solid #1d2633;color:var(--fg);padding:6px 8px;border-radius:8px}
-  #bar button{cursor:pointer}
-  #mapwrap{position:relative}
-  #map,#mlmap{position:absolute;inset:0}
-  /* Right-edge legend dock */
-  #legendDock{
-    position:absolute; right:10px; top:10px; width:220px; background:#0b0e12dd; border:1px solid #1d2633;
-    border-radius:10px; padding:8px; z-index:7; backdrop-filter: blur(4px); user-select:none
-  }
-  #legendDock header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-  #legendDock header .title{font-weight:600;font-size:14px}
-  #legendDock .row{display:flex;align-items:center;gap:6px;font-size:13px;margin:4px 0}
-  #legendBtn{
-    position:absolute; right:10px; top:10px; z-index:8; background:#0b0e12ee; border:1px solid #1d2633; color:var(--fg);
-    padding:6px 10px; border-radius:999px; cursor:pointer
-  }
-  #legendDock .resize{width:100%;accent-color:var(--accent)}
-  .badge{display:inline-block;padding:2px 6px;border-radius:999px;font-size:12px}
-  .psi20{background:#6d28d9} .psi5{background:#3b82f6} .psi1{background:#22d3ee} .therm{background:#f97316}
-  .fall{background:#22c55e}
-  /* wind control mini-compass */
-  #windHUD{position:absolute; left:10px; top:10px; z-index:8; background:#0b0e12ee; border:1px solid #1d2633; padding:6px 8px; border-radius:10px}
-  #windHUD canvas{display:block}
-  .note{color:var(--muted);font-size:12px}
-  /* ring labels */
-  .ring-label{
-    position:absolute; transform:translate(-50%,-50%); background:#0b0e12cc; padding:2px 6px; border:1px solid #1d2633; border-radius:8px; font-size:12px
-  }
+:root{
+  --bg:#101114;--panel:#0f1318;--muted:#8a95a7;--fg:#e9eef7;--accent:#22d3ee;
+  --ok:#22c55e;--warn:#f59e0b;--psi20:#6d28d9;--psi5:#3b82f6;--psi1:#22d3ee;--therm:#f97316;--fall:#22c55e;
+}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial}
+#app{display:grid;grid-template-rows:auto 1fr;height:100%}
+#bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px;background:var(--panel);box-shadow:0 2px 0 #0008;z-index:12}
+#bar .label{font-size:12px;opacity:.85;margin-right:4px}
+#bar input,#bar select,#bar button{background:#0b0e12;border:1px solid #1d2633;color:var(--fg);padding:6px 8px;border-radius:10px}
+#bar button{cursor:pointer}
+#mapwrap{position:relative}
+#mlmap,#map{position:absolute;inset:0}
+
+/* right-side stacked overlays */
+#stack{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:10px;z-index:10;width:min(92vw,300px)}
+.panel{background:#0b0e12dd;border:1px solid #1d2633;border-radius:10px;backdrop-filter:blur(4px)}
+.panel header{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid #1d2633;cursor:pointer}
+.panel .content{padding:8px 10px;display:none}
+.panel.open .content{display:block}
+.badge{display:inline-block;padding:2px 6px;border-radius:999px;font-size:12px}
+.b20{background:var(--psi20)} .b5{background:var(--psi5)} .b1{background:var(--psi1)} .bth{background:var(--therm)} .bfo{background:var(--fall)}
+.note{color:var(--muted);font-size:12px}
+.row{display:flex;align-items:center;gap:8px;margin:6px 0}
+.row input[type="range"]{width:100%;accent-color:var(--accent)}
+.smallbtn{padding:4px 8px;border-radius:8px;border:1px solid #1d2633;background:#0b0e12;color:var(--fg);cursor:pointer}
+
+/* wind HUD (draggable/resizable) */
+#windHUD{position:absolute;left:10px;bottom:10px;z-index:11;background:#0b0e12ee;border:1px solid #1d2633;border-radius:12px;box-shadow:0 2px 8px #0008;min-width:220px}
+#windHead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-bottom:1px solid #1d2633;cursor:move}
+#windBody{display:flex;gap:10px;align-items:center;padding:8px 10px}
+#windCompass{display:block}
+#windResize{position:absolute;right:4px;bottom:4px;width:18px;height:18px;border-right:2px solid #334155;border-bottom:2px solid #334155;border-radius:3px;cursor:nwse-resize}
+#windFoot{display:flex;gap:6px;padding:0 10px 10px 10px;flex-wrap:wrap}
+#windFoot input{width:84px}
+
+/* ring labels */
+.ring-label{position:absolute;transform:translate(-50%,-50%);background:#0b0e12cc;padding:2px 6px;border:1px solid #1d2633;border-radius:8px;font-size:12px;pointer-events:none}
+
+/* shelter markers */
+.shelter-dot{width:10px;height:10px;border-radius:50%;border:2px solid #0f172a;background:#22c55e;box-shadow:0 0 6px #22c55e}
+.shelter-warn{background:#f59e0b;box-shadow:0 0 6px #f59e0b}
 </style>
 </head>
 <body>
@@ -64,413 +70,601 @@
       <option value="1200">B83 (1.2 Mt)</option>
       <option value="50000">Tsar Bomba (50 Mt)</option>
     </select>
-    <span class="label">Yield kt</span><input id="yield" type="number" min="0.1" step="0.1" value="100" style="width:82px">
-    <span class="label">Altitude m</span><input id="alt" type="number" step="10" value="0" style="width:90px">
+    <span class="label">Yield</span><input id="yield" type="number" min="0.1" step="0.1" value="100" style="width:84px">kt
+    <span class="label">Alt</span><input id="alt" type="number" step="10" value="0" style="width:80px">m
     <label><input id="fallout" type="checkbox" checked> Fallout</label>
     <span class="label">WX</span>
-    <select id="wx">
-      <option value="dry">Dry</option>
-      <option value="rain">Rain</option>
-      <option value="snow">Snow</option>
-    </select>
+    <select id="wx"><option value="dry">Dry</option><option value="rain">Rain</option><option value="snow">Snow</option></select>
     <span class="label">Wind</span>
-    <input id="wind" type="number" min="0" max="360" step="1" value="90" style="width:72px">°
+    <input id="wind" type="number" min="0" max="359" step="1" value="90" style="width:70px">°
+    <span class="label">Speed</span>
+    <input id="windSpd" type="number" min="0" max="60" step="1" value="10" style="width:70px">m/s
     <button id="add">Add burst (tap map)</button>
     <button id="clear">Clear</button>
+    <button id="refreshTiles">Refresh tiles</button>
     <span class="label">Basemap</span>
-    <select id="basemap">
-      <option value="auto" selected>Auto</option>
-      <option value="osm">OSM Streets</option>
-      <option value="sat">Satellite (demo)</option>
-      <option value="grid">Offline grid</option>
-    </select>
+    <select id="basemap"><option value="auto" selected>Auto</option><option value="osm">OSM Streets</option><option value="sat">Satellite (demo)</option><option value="grid">Offline grid</option></select>
   </div>
 
   <div id="mapwrap">
-    <!-- MapLibre 3D map (if supported) -->
     <div id="mlmap"></div>
-    <!-- Leaflet fallback (hidden if ML active) -->
     <div id="map"></div>
 
-    <button id="legendBtn">Legend</button>
-    <div id="legendDock" hidden>
-      <header>
-        <div class="title">Legend</div>
-        <button id="closeLegend" title="Hide">✕</button>
-      </header>
-      <div class="row"><span class="badge psi20">20 psi</span> severe structural collapse</div>
-      <div class="row"><span class="badge psi5">5 psi</span> heavy damage (most houses)</div>
-      <div class="row"><span class="badge psi1">1 psi</span> window failure / light damage</div>
-      <div class="row"><span class="badge therm">Thermal 3rd°</span> unprotected burns</div>
-      <div class="row"><span class="badge fall">Fallout</span> plume (dose bands)</div>
-      <div class="row"><input id="legendSize" type="range" min="180" max="320" value="220" class="resize"></div>
-      <div class="note">Drag this panel by its header. Tap a ring on the map for text + dose.</div>
-    </div>
-
-    <div id="windHUD">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <canvas id="windCompass" width="90" height="90" title="Drag arrow to set bearing"></canvas>
-        <div>
-          <div style="font-weight:600">Wind</div>
-          <div class="note">Drag arrow • 0–359°</div>
-          <div id="windRead" style="margin-top:4px;font-weight:600">90° (E)</div>
+    <!-- Right-side stacked overlays -->
+    <div id="stack">
+      <!-- Legend -->
+      <div class="panel open" id="pLegend">
+        <header><div>Legend</div><div>▾</div></header>
+        <div class="content">
+          <div class="row"><span class="badge b20">20 psi</span> severe collapse</div>
+          <div class="row"><span class="badge b5">5 psi</span> heavy damage</div>
+          <div class="row"><span class="badge b1">1 psi</span> light damage</div>
+          <div class="row"><span class="badge bth">Thermal 3rd°</span> burns</div>
+          <div class="row"><span class="badge bfo">Fallout</span> dose plume</div>
+          <div class="note">Tap any ring/plume for text and population.</div>
         </div>
       </div>
+
+      <!-- Tiles / Terrain -->
+      <div class="panel open" id="pTiles">
+        <header><div>Tiles / Terrain</div><div>▾</div></header>
+        <div class="content">
+          <div class="row">
+            <button class="smallbtn" id="btnRefresh2">Refresh tiles</button>
+            <select id="bmSel"><option value="auto" selected>Auto</option><option value="osm">OSM Streets</option><option value="sat">Satellite (demo)</option><option value="grid">Offline grid</option></select>
+          </div>
+          <div class="row">
+            <label><input id="terrainOn" type="checkbox" checked> Terrain (3D)</label>
+            <label><input id="hillshadeOn" type="checkbox" checked> Hillshade</label>
+          </div>
+          <div class="row">Exaggeration <input id="exagg" type="range" min="1" max="3" step="0.1" value="1.4"><span id="exVal" style="width:36px;text-align:right">1.4</span></div>
+          <div class="note">Tilt with two fingers. Turn off terrain if device is slow.</div>
+        </div>
+      </div>
+
+      <!-- Overlays / Population -->
+      <div class="panel" id="pOver">
+        <header><div>Overlays / Population</div><div>▾</div></header>
+        <div class="content">
+          <div class="row"><label><input id="popHeat" type="checkbox"> Population heat (county)</label></div>
+          <div class="row">Precip intensity <input id="precip" type="range" min="0" max="100" value="20"><span id="precipVal" style="width:36px;text-align:right">20</span></div>
+          <div class="row">Humidity <input id="humid" type="range" min="0" max="100" value="40"><span id="humidVal" style="width:36px;text-align:right">40</span></div>
+          <div id="popRead" class="note">Population in current effects: —</div>
+          <button class="smallbtn" id="calcPop">Recalc population</button>
+        </div>
+      </div>
+
+      <!-- Shelter Finder -->
+      <div class="panel" id="pShelter">
+        <header><div>Shelter Finder (terrain-aware)</div><div>▾</div></header>
+        <div class="content">
+          <div class="row">
+            <button class="smallbtn" id="btnGPS">My Position (GPS)</button>
+            <select id="radius">
+              <option value="250">250 m</option>
+              <option value="500" selected>500 m</option>
+              <option value="1000">1 km</option>
+              <option value="1500">1.5 km</option>
+            </select>
+          </div>
+          <div class="row">
+            <button class="smallbtn" id="findShelter">Suggest spots</button>
+            <button class="smallbtn" id="clearShelter">Clear</button>
+          </div>
+          <div class="note">We prefer **leeward** slopes and low cuts relative to wind. Always favor solid cover: interior rooms, basements, culverts, embankments.</div>
+          <div id="shelterRead" class="note">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Wind HUD -->
+    <div id="windHUD">
+      <div id="windHead"><div style="font-weight:600">Wind / Fallout Timing</div><div id="windRead" class="note">90° (E), 10 m/s</div></div>
+      <div id="windBody">
+        <canvas id="windCompass" width="120" height="120"></canvas>
+        <div>
+          <div class="note">Drag arrow • 0–359°</div>
+          <div id="hudEta" style="margin-top:8px;font-weight:600">ETA to you: —</div>
+          <div id="hudLeave" class="note">Leave-shelter est: —</div>
+        </div>
+      </div>
+      <div id="windFoot">
+        <input id="windNum" type="number" min="0" max="359" step="1" value="90">
+        <input id="windNumSpd" type="number" min="0" max="60" step="1" value="10">
+        <button id="windCenter" class="smallbtn">Reset pos</button>
+        <button id="windHide" class="smallbtn">Hide</button>
+      </div>
+      <div id="windResize" title="Resize"></div>
     </div>
   </div>
 </div>
 
-<script>
-/* ---------- utilities ---------- */
-const $ = sel => document.querySelector(sel);
-const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
-const toRad = d=>d*Math.PI/180;
-const toDeg = r=>r*180/Math.PI;
-const bearingToCardinal = b=>{
-  const dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
-  return dirs[Math.round(((b%360)+360)%360/22.5)%16];
-};
-
-// quick colors
-const col = {
-  psi20:'#6d28d9', psi5:'#3b82f6', psi1:'#22d3ee', therm:'#f97316', fall:'#22c55e'
-};
-
-/* ---------- state ---------- */
-let useML = false;        // using MapLibre?
-let mlmap, lmap;          // maps
-let bursts = [];          // [{latlng, yieldKt, alt, windDeg, wx, rings, plume}]
-let addMode = false;
-let windDeg = 90;
-
-/* ---------- map init (prefer MapLibre GL) ---------- */
-function webglOk(){
-  try{
-    const c=document.createElement('canvas');
-    return !!(window.WebGLRenderingContext&&(c.getContext('webgl')||c.getContext('experimental-webgl')));
-  }catch(e){return false}
+<!-- Lightweight county polygons (demo). Drop a full "counties.json" in repo to upgrade automatically. -->
+<script id="countiesData" type="application/json">
+{
+  "type":"FeatureCollection",
+  "features":[
+    {"type":"Feature","properties":{"name":"Columbia, OR","pop":52800},"geometry":{"type":"Polygon","coordinates":[[[-123.42,45.95],[-123.42,45.55],[-122.65,45.55],[-122.65,46.20],[-123.42,45.95]]]}},
+    {"type":"Feature","properties":{"name":"Clatsop, OR","pop":41100},"geometry":{"type":"Polygon","coordinates":[[[-124.10,46.30],[-124.10,45.80],[-123.50,45.80],[-123.50,46.30],[-124.10,46.30]]]}},
+    {"type":"Feature","properties":{"name":"Cowlitz, WA","pop":111000},"geometry":{"type":"Polygon","coordinates":[[[-123.30,46.60],[-123.30,46.00],[-122.48,46.00],[-122.48,46.60],[-123.30,46.60]]]}},
+    {"type":"Feature","properties":{"name":"Clark, WA","pop":503000},"geometry":{"type":"Polygon","coordinates":[[[-123.30,45.90],[-123.30,45.50],[-122.20,45.50],[-122.20,45.90],[-123.30,45.90]]]}},
+    {"type":"Feature","properties":{"name":"Multnomah, OR","pop":815000},"geometry":{"type":"Polygon","coordinates":[[[-122.95,45.70],[-122.95,45.40],[-122.25,45.40],[-122.25,45.70],[-122.95,45.70]]]}},
+    {"type":"Feature","properties":{"name":"Washington, OR","pop":606000},"geometry":{"type":"Polygon","coordinates":[[[-123.40,45.80],[-123.40,45.30],[-122.70,45.30],[-122.70,45.80],[-123.40,45.80]]]}},
+    {"type":"Feature","properties":{"name":"Tillamook, OR","pop":27300},"geometry":{"type":"Polygon","coordinates":[[[-123.95,45.75],[-123.95,45.20],[-123.40,45.20],[-123.40,45.75],[-123.95,45.75]]]}},
+    {"type":"Feature","properties":{"name":"Yamhill, OR","pop":110000},"geometry":{"type":"Polygon","coordinates":[[[-123.50,45.60],[-123.50,45.10],[-122.95,45.10],[-122.95,45.60],[-123.50,45.60]]]}},
+    {"type":"Feature","properties":{"name":"Polk, OR","pop":91000},"geometry":{"type":"Polygon","coordinates":[[[-123.65,45.20],[-123.65,44.70],[-122.95,44.70],[-122.95,45.20],[-123.65,45.20]]]}},
+    {"type":"Feature","properties":{"name":"Marion, OR","pop":353000},"geometry":{"type":"Polygon","coordinates":[[[-123.25,45.10],[-123.25,44.50],[-122.25,44.50],[-122.25,45.10],[-123.25,45.10]]]}},
+    {"type":"Feature","properties":{"name":"Lincoln, OR","pop":51000},"geometry":{"type":"Polygon","coordinates":[[[-124.30,45.10],[-124.30,44.40],[-123.75,44.40],[-123.75,45.10],[-124.30,45.10]]]}},
+    {"type":"Feature","properties":{"name":"Benton, OR","pop":96000},"geometry":{"type":"Polygon","coordinates":[[[-123.60,44.80],[-123.60,44.30],[-123.05,44.30],[-123.05,44.80],[-123.60,44.80]]]}},
+    {"type":"Feature","properties":{"name":"Pacific, WA","pop":23000},"geometry":{"type":"Polygon","coordinates":[[[-124.10,46.80],[-124.10,46.30],[-123.50,46.30],[-123.50,46.80],[-124.10,46.80]]]}},
+    {"type":"Feature","properties":{"name":"Wahkiakum, WA","pop":4500},"geometry":{"type":"Polygon","coordinates":[[[-123.60,46.45],[-123.60,46.20],[-123.20,46.20],[-123.20,46.45],[-123.60,46.45]]]} }
+  ]
 }
+</script>
 
-async function initMap(){
-  const start=[45.85,-123.49]; // Birkenfeld default view
+<script>
+/* ========= helpers ========= */
+const $=s=>document.querySelector(s);
+const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const bearingToCardinal=b=>['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(((b%360)+360)%360/22.5)%16];
+const getCSS=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+function lsGet(k,def){ try{const v=localStorage.getItem(k); return v?JSON.parse(v):def;}catch{return def} }
+function lsSet(k,v){ try{localStorage.setItem(k,JSON.stringify(v));}catch{} }
+
+/* ========= state ========= */
+let useML=false, mlmap, lmap;
+let addMode=false, windDeg=lsGet('windDeg',90), windSpd=lsGet('windSpd',10); // m/s
+let effects=[]; // GeoJSON effects for population calc
+let myPos=null; // [lat,lng]
+let popHeatLayer=null;
+let shelterMarkers=[];
+
+/* ========= init maps (with terrain) ========= */
+function webglOk(){ try{const c=document.createElement('canvas');return !!(window.WebGLRenderingContext&&(c.getContext('webgl')||c.getContext('experimental-webgl')));}catch{return false} }
+
+function initMap(){
+  const start=[45.85,-123.49];
   if(webglOk()){
-    try{
-      useML=true;
-      $('#map').style.display='none';
-      mlmap = new maplibregl.Map({
-        container:'mlmap',
-        style:'https://demotiles.maplibre.org/style.json', // free demo style
-        center:[start[1],start[0]],
-        zoom:8.5,
-        pitch:30, bearing:0,
-        touchZoomRotate:true, pitchWithRotate:true
-      });
-      mlmap.addControl(new maplibregl.NavigationControl({visualizePitch:true}), 'top-left');
-      mlmap.addControl(new maplibregl.ScaleControl({maxWidth:120,unit:'imperial'}));
-      mlmap.on('load', ()=>{ /* ready */ });
-      mlmap.on('click', e=>{ if(addMode){ placeBurst([e.lngLat.lat,e.lngLat.lng]); addMode=false; $('#add').classList.remove('active'); } });
-      mlmap.on('move', syncWindHUD);
-      return;
-    }catch(e){ useML=false; }
+    useML=true; $('#map').style.display='none';
+    mlmap = new maplibregl.Map({
+      container:'mlmap',
+      style:{
+        "version":8,
+        "sources":{
+          "osm":{"type":"raster","tiles":["https://a.tile.openstreetmap.org/{z}/{x}/{y}.png","https://b.tile.openstreetmap.org/{z}/{x}/{y}.png","https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"],"tileSize":256,"attribution":"© OSM"},
+          "sat":{"type":"raster","tiles":["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],"tileSize":256}, /* demo placeholder */
+          "grid":{"type":"raster","tiles":["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],"tileSize":256},
+          /* public demo DEM tiles provided by MapLibre */
+          "terrain-dem":{"type":"raster-dem","tiles":["https://demotiles.maplibre.org/terrain-tiles/{z}/{x}/{y}.png"],"tileSize":256,"attribution":"Terrain © MapLibre demo"}
+        },
+        "layers":[
+          {"id":"baseraster","type":"raster","source":"osm","minzoom":0,"maxzoom":19},
+          {"id":"hillshade","type":"hillshade","source":"terrain-dem","layout":{"visibility":"visible"},"paint":{"hillshade-shadow-color":"#000","hillshade-highlight-color":"#fff","hillshade-exaggeration":0.6}}
+        ],
+        "terrain":{"source":"terrain-dem","exaggeration":1.4}
+      },
+      center:[start[1],start[0]], zoom:8.6, pitch:40, bearing:0,
+      touchZoomRotate:true, pitchWithRotate:true
+    });
+    mlmap.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-left');
+    mlmap.addControl(new maplibregl.ScaleControl({maxWidth:120,unit:'imperial'}));
+    mlmap.on('click',e=>{ if(addMode){ placeBurst([e.lngLat.lat,e.lngLat.lng]); addMode=false; $('#add').classList.remove('active'); }});
+  }else{
+    useML=false; $('#mlmap').style.display='none';
+    lmap=L.map('map').setView(start,9);
+    // base OSM + hillshade overlay (fallback)
+    const base = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(lmap);
+    const shade= L.tileLayer('https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',{opacity:0.5}).addTo(lmap);
+    lmap.on('click',e=>{ if(addMode){ placeBurst([e.latlng.lat,e.latlng.lng]); addMode=false; $('#add').classList.remove('active'); }});
   }
-  // fallback Leaflet
-  useML=false;
-  $('#mlmap').style.display='none';
-  lmap = L.map('map',{zoomControl:true}).setView(start, 9);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    maxZoom:19, attribution:'© OpenStreetMap'
-  }).addTo(lmap);
-  lmap.on('click', e=>{ if(addMode){ placeBurst([e.latlng.lat,e.latlng.lng]); addMode=false; $('#add').classList.remove('active'); } });
 }
 initMap();
 
-/* ---------- legend UI ---------- */
-const legend = $('#legendDock');
-$('#legendBtn').onclick=()=>legend.hidden=!legend.hidden;
-$('#closeLegend').onclick=()=>legend.hidden=true;
-$('#legendSize').oninput=e=>{legend.style.width = e.target.value+'px'};
-// drag legend by header
-(function dragPanel(){
-  let drag=false, sx=0, sy=0, ox=0, oy=0;
-  const header = $('#legendDock header');
-  header.style.cursor='move';
-  header.addEventListener('pointerdown',ev=>{drag=true;sx=ev.clientX;sy=ev.clientY; const r=legend.getBoundingClientRect(); ox=r.left; oy=r.top; header.setPointerCapture(ev.pointerId);});
-  header.addEventListener('pointermove',ev=>{if(!drag)return; const dx=ev.clientX-sx, dy=ev.clientY-sy; legend.style.left=(ox+dx)+'px'; legend.style.top=(oy+dy)+'px'; legend.style.right='auto';});
-  header.addEventListener('pointerup',()=>drag=false);
-})();
-
-/* ---------- wind compass (draggable) ---------- */
-const compass = $('#windCompass');
-const ctx = compass.getContext('2d');
-function drawCompass(){
-  const c=ctx, w=compass.width, h=compass.height, r=42, cx=w/2, cy=h/2;
-  c.clearRect(0,0,w,h);
-  c.save();
-  // dial
-  c.beginPath(); c.arc(cx,cy,r,0,Math.PI*2); c.fillStyle='#0b0e12'; c.fill(); c.lineWidth=2; c.strokeStyle='#1d2633'; c.stroke();
-  // ticks
-  c.translate(cx,cy);
-  for(let i=0;i<36;i++){
-    c.save(); c.rotate(i*10*Math.PI/180);
-    c.beginPath(); c.moveTo(0,-r+3); c.lineTo(0,-r+(i%9===0?12:6));
-    c.strokeStyle=i%9===0?'#fff':'#5b6779'; c.lineWidth=i%9===0?2:1; c.stroke(); c.restore();
-  }
-  // arrow
-  c.save(); c.rotate(toRad(windDeg));
-  c.beginPath(); c.moveTo(0,8); c.lineTo(0,-r+14); c.strokeStyle='#2dd4bf'; c.lineWidth=4; c.stroke();
-  c.beginPath(); c.moveTo(0,-r+14); c.lineTo(6,-r+28); c.lineTo(-6,-r+28); c.closePath(); c.fillStyle='#2dd4bf'; c.fill();
-  c.restore();
-  c.restore();
-  $('#windRead').textContent = `${Math.round(((windDeg%360)+360)%360)}° (${bearingToCardinal(windDeg)})`;
-  $('#wind').value = Math.round(((windDeg%360)+360)%360);
+/* ========= panel toggles ========= */
+for(const p of document.querySelectorAll('.panel header')){
+  p.addEventListener('click',()=>p.parentElement.classList.toggle('open'));
 }
-drawCompass();
-compass.addEventListener('pointerdown',onDrag); compass.addEventListener('pointermove',onDrag);
-function onDrag(ev){
-  if(ev.buttons===0 && ev.type==='pointermove') return;
-  const rect = compass.getBoundingClientRect();
-  const x = ev.clientX - rect.left - rect.width/2;
-  const y = ev.clientY - rect.top - rect.height/2;
-  windDeg = (toDeg(Math.atan2(x,-y))+360)%360;
-  drawCompass(); updatePlumes();
-}
-$('#wind').addEventListener('input', e=>{ windDeg=+e.target.value; drawCompass(); updatePlumes(); });
 
-/* ---------- controls ---------- */
-$('#preset').onchange = e=>{
-  const v=e.target.value;
-  if(v==='custom') return;
-  $('#yield').value = v;
-};
+/* ========= top bar actions ========= */
+$('#preset').onchange=e=>{ if(e.target.value!=='custom') $('#yield').value=e.target.value; };
 $('#add').onclick=()=>{ addMode=!addMode; $('#add').classList.toggle('active',addMode); };
-$('#clear').onclick=()=>{ clearBursts(); };
+$('#clear').onclick=()=>{ clearMap(); };
+$('#refreshTiles').onclick=()=>{ refreshTiles(); };
+$('#btnRefresh2').onclick=()=>{ refreshTiles(); };
+$('#bmSel').onchange=e=>{ $('#basemap').value=e.target.value; refreshTiles(); };
+$('#basemap').onchange=()=>{ refreshTiles(); };
+$('#wx').onchange=()=>{};
+$('#precip').oninput=e=>{ $('#precipVal').textContent=e.target.value; };
+$('#humid').oninput=e=>{ $('#humidVal').textContent=e.target.value; };
+$('#calcPop').onclick=calcPopulation;
 
-$('#wx').onchange=updatePlumes;
-$('#yield').oninput=()=>{ /* live update for selected burst later if needed*/ };
-$('#alt').oninput=()=>{};
-$('#basemap').onchange=()=>{
-  const v=$('#basemap').value;
+$('#terrainOn').onchange=()=>toggleTerrain();
+$('#hillshadeOn').onchange=()=>toggleHillshade();
+$('#exagg').oninput=e=>{ $('#exVal').textContent=e.target.value; setExaggeration(+e.target.value); };
+
+function refreshTiles(){
   if(useML){
-    if(v==='grid'){ /* no-op; grid is drawn by us below */ }
-    if(v==='sat'){ mlmap.setStyle('https://demotiles.maplibre.org/style.json'); } // demo includes satellite-ish layer
-    if(v==='osm'){ mlmap.setStyle('https://demotiles.maplibre.org/style.json'); }
-  } else {
-    lmap.eachLayer(l=>{
-      if(l._url){
-        l.remove();
-      }
-    });
-    if(v==='grid'){
-      // grid drawn as overlay; also add light OSM beneath
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(lmap);
-    } else if(v==='sat'){
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(lmap); // placeholder
-    } else {
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(lmap);
+    const sel=$('#basemap').value;
+    const src= sel==='osm'?'osm': (sel==='sat'?'sat':'osm');
+    try{ mlmap.setLayoutProperty('baseraster','visibility','none'); }catch{}
+    try{ mlmap.removeLayer('baseraster'); }catch{}
+    mlmap.addLayer({"id":"baseraster","type":"raster","source":src,"minzoom":0,"maxzoom":19}, 'hillshade');
+  }else{
+    // Leaflet fallback just reloads
+    lmap.eachLayer(l=>{ if(l._url) l.remove(); });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(lmap);
+    L.tileLayer('https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',{opacity:0.5}).addTo(lmap);
+  }
+}
+function toggleTerrain(){
+  if(!useML) return;
+  const on=$('#terrainOn').checked;
+  if(on){
+    mlmap.setTerrain({source:'terrain-dem',exaggeration:+$('#exagg').value});
+  }else{
+    mlmap.setTerrain(null);
+  }
+}
+function toggleHillshade(){
+  if(!useML) return;
+  const vis = $('#hillshadeOn').checked?'visible':'none';
+  try{ mlmap.setLayoutProperty('hillshade','visibility',vis); }catch{}
+}
+function setExaggeration(x){
+  if(!useML) return;
+  try{ mlmap.setTerrain({source:'terrain-dem',exaggeration:x}); }catch{}
+}
+
+/* ========= models ========= */
+function ringKm(y,psi){ const W=Math.cbrt(Math.max(0.1,y)); if(psi===20) return 0.9*W; if(psi===5) return 1.9*W; if(psi===1) return 4.2*W; return 0; }
+function thermalKm(y){ return 7.0*Math.cbrt(Math.max(0.1,y)); }
+function plumeParams(y, wx, alt, precipPct, humidPct){
+  const base=Math.sqrt(Math.max(0.1,y)); let len=25*base, width=6*base;
+  if(wx==='rain'){ len*=0.82; width*=0.72; }
+  if(wx==='snow'){ len*=0.90; width*=0.80; }
+  const p = clamp(precipPct/100,0,1); len *= (1-0.25*p); width *= (1-0.25*p);
+  const h = clamp(humidPct/100,0,1); len *= (1-0.1*h);
+  if(alt>300){ len*=0.6; width*=0.6; }
+  return {len,width};
+}
+
+/* ========= geometry ========= */
+function circleGJ(center, radiusM, steps=120){
+  const [lng,lat]=center; const out=[];
+  for(let i=0;i<=steps;i++){
+    const brg=i/steps*2*Math.PI, d=radiusM/6371000, lat1=toRad(lat), lon1=toRad(lng);
+    const lat2=Math.asin(Math.sin(lat1)*Math.cos(d)+Math.cos(lat1)*Math.sin(d)*Math.cos(brg));
+    const lon2=lon1+Math.atan2(Math.sin(brg)*Math.sin(d)*Math.cos(lat1),Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
+    out.push([toDeg(lon2),toDeg(lat2)]);
+  }
+  return turf.polygon([out]);
+}
+function offsetOnEarth(lat,lng, fwdM, brgDeg, rightM){
+  const R=6371000, b=toRad(brgDeg), d=fwdM/R, lat1=toRad(lat), lon1=toRad(lng);
+  const lat2=Math.asin(Math.sin(lat1)*Math.cos(d)+Math.cos(lat1)*Math.sin(d)*Math.cos(b));
+  const lon2=lon1+Math.atan2(Math.sin(b)*Math.sin(d)*Math.cos(lat1),Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
+  const b2=b+Math.PI/2, d2=rightM/R;
+  const lat3=Math.asin(Math.sin(lat2)*Math.cos(d2)+Math.cos(lat2)*Math.sin(d2)*Math.cos(b2));
+  const lon3=lon2+Math.atan2(Math.sin(b2)*Math.sin(d2)*Math.cos(lat2),Math.cos(d2)-Math.sin(lat2)*Math.sin(lat3));
+  return [toDeg(lon3),toDeg(lat3)];
+}
+function plumeGJ(center, brgDeg, lenKm, widthKm){
+  const [lng0,lat0]=center, coords=[], N=120, lenM=lenKm*1000, halfW=widthKm*500;
+  for(let i=0;i<=N;i++){ const t=i/N, dist=t*lenM, w=Math.sin(Math.PI*Math.min(1,t))*halfW; coords.push(offsetOnEarth(lat0,lng0,dist,brgDeg, w)); }
+  for(let i=N;i>=0;i--){ const t=i/N, dist=t*lenM, w=Math.sin(Math.PI*Math.min(1,t))*halfW; coords.push(offsetOnEarth(lat0,lng0,dist,brgDeg,-w)); }
+  return turf.polygon([coords]);
+}
+
+/* ========= drawing (both engines) ========= */
+let layersML=[], layersLF=[];
+function addFill(gj,id,color,fop,line=true){
+  if(useML){
+    mlmap.addSource(id,{type:'geojson',data:gj});
+    mlmap.addLayer({id, type:'fill', source:id, paint:{'fill-color':color,'fill-opacity':fop}});
+    if(line) mlmap.addLayer({id:id+'l', type:'line', source:id, paint:{'line-color':color,'line-width':2,'line-opacity':0.9}});
+    layersML.push(id);
+  }else{
+    const lay=L.geoJSON(gj,{style:{color,weight:2,fillColor:color,fillOpacity:fop}}).addTo(lmap);
+    layersLF.push(lay);
+  }
+}
+function addMarker(lat,lng){
+  if(useML){ new maplibregl.Marker().setLngLat([lng,lat]).addTo(mlmap); }
+  else{ L.marker([lat,lng]).addTo(lmap); }
+}
+function clearMap(){
+  effects=[]; document.querySelectorAll('.ring-label').forEach(e=>e.remove());
+  if(useML){
+    layersML.forEach(id=>{ try{ mlmap.removeLayer(id+'l'); }catch{} try{ mlmap.removeLayer(id); }catch{} try{ mlmap.removeSource(id);}catch{} });
+    layersML=[];
+  }else{
+    layersLF.forEach(l=>{ try{ l.remove(); }catch{} }); layersLF=[];
+  }
+  if(popHeatLayer){ if(useML){ try{ mlmap.removeLayer('popHeat'); mlmap.removeSource('popHeat'); }catch{} } else { try{ lmap.removeLayer(popHeatLayer);}catch{} } popHeatLayer=null; }
+  shelterMarkers.forEach(m=>m.remove && m.remove()); shelterMarkers=[];
+  $('#popRead').textContent='Population in current effects: —';
+  $('#shelterRead').textContent='—';
+}
+
+/* ========= burst placement ========= */
+function placeBurst([lat,lng]){
+  const y=+$('#yield').value, a=+$('#alt').value, wx=$('#wx').value;
+  const precip=+$('#precip').value, humid=+$('#humid').value;
+
+  addMarker(lat,lng);
+
+  const r20=ringKm(y,20), r5=ringKm(y,5), r1=ringKm(y,1), th=thermalKm(y);
+  const c20=circleGJ([lng,lat], r20*1000), c5=circleGJ([lng,lat], r5*1000), c1=circleGJ([lng,lat], r1*1000), cT=circleGJ([lng,lat], th*1000);
+
+  addFill(c20,'r20_'+Math.random(), getCSS('--psi20'), .28);
+  addFill(c5 ,'r5_' +Math.random(), getCSS('--psi5') , .25);
+  addFill(c1 ,'r1_' +Math.random(), getCSS('--psi1') , .22);
+  addFill(cT ,'rT_' +Math.random(), getCSS('--therm'), .15);
+
+  if($('#fallout').checked){
+    const p=plumeParams(y,wx,a,precip,humid);
+    const plume=plumeGJ([lng,lat], windDeg, p.len, p.width);
+    addFill(plume,'pl_'+Math.random(), getCSS('--fall'), .22,false);
+    effects.push({gj:plume,label:'Fallout plume'});
+  }
+
+  effects.push({gj:c20,label:'20 psi'}); effects.push({gj:c5,label:'5 psi'}); effects.push({gj:c1,label:'1 psi'}); effects.push({gj:cT,label:'Thermal 3rd°'});
+  calcPopulation();
+  if(myPos) updateETA([lat,lng], windDeg);
+  labelRings([lat,lng], {r20,r5,r1,th});
+}
+
+/* ========= ring labels ========= */
+function labelRings([lat,lng], R){
+  const pairs=[['20 psi',R.r20],['5 psi',R.r5],['1 psi',R.r1],['Thermal',R.th]];
+  pairs.forEach(([txt,km])=>{
+    const Rearth=6371, d=km/Rearth, brg=toRad(90), lat1=toRad(lat), lon1=toRad(lng);
+    const lat2=Math.asin(Math.sin(lat1)*Math.cos(d)+Math.cos(lat1)*Math.sin(d)*Math.cos(brg));
+    const lon2=lon1+Math.atan2(Math.sin(brg)*Math.sin(d)*Math.cos(lat1),Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
+    const el=document.createElement('div'); el.className='ring-label'; el.textContent=`${txt}`;
+    document.body.appendChild(el);
+    positionHTML(el,[toDeg(lat2),toDeg(lon2)]);
+  });
+}
+function positionHTML(el,ll){
+  const cont=useML?mlmap.getContainer():lmap.getContainer(); const rect=cont.getBoundingClientRect();
+  const pt= useML ? mlmap.project({lng:ll[1],lat:ll[0]}) : lmap.latLngToLayerPoint(L.latLng(ll[0],ll[1]));
+  el.style.left=(rect.left+pt.x)+'px'; el.style.top=(rect.top+pt.y)+'px';
+}
+
+/* ========= population heat & calc ========= */
+let counties=null;
+async function loadCounties(){
+  try{ const r=await fetch('counties.json',{cache:'no-store'}); if(r.ok){ counties=await r.json(); return; } }catch{}
+  counties = JSON.parse(document.getElementById('countiesData').textContent);
+}
+loadCounties();
+
+$('#popHeat').onchange=()=>{
+  if(!counties){ alert('Counties still loading'); $('#popHeat').checked=false; return; }
+  if($('#popHeat').checked){
+    if(useML){
+      mlmap.addSource('popHeat',{type:'geojson',data:counties});
+      mlmap.addLayer({id:'popHeat',type:'fill',source:'popHeat',
+        paint:{'fill-color':['interpolate',['linear'],['get','pop'],0,'#0f172a',50000,'#475569',300000,'#ef4444'],
+               'fill-opacity':0.25}});
+    }else{
+      popHeatLayer = L.geoJSON(counties,{style:f=>({color:'#444',weight:1,fillColor:popColor(f.properties.pop),fillOpacity:0.25})}).addTo(lmap);
     }
+  }else{
+    if(useML){ try{ mlmap.removeLayer('popHeat'); mlmap.removeSource('popHeat'); }catch{} }
+    else{ try{ lmap.removeLayer(popHeatLayer);}catch{} popHeatLayer=null; }
+  }
+}
+function popColor(p){ return p>300000?'#ef4444':p>100000?'#f59e0b':'#475569'; }
+
+async function calcPopulation(){
+  if(!counties){ $('#popRead').textContent='Population: (loading counties…)'; return; }
+  if(effects.length===0){ $('#popRead').textContent='Population in current effects: —'; return; }
+  let union = effects[0].gj;
+  for(let i=1;i<effects.length;i++){ try{ union = turf.union(union, effects[i].gj); }catch{} }
+  let total=0, details=[];
+  counties.features.forEach(c=>{
+    try{
+      const inter = turf.intersect(union, c);
+      if(inter){
+        const frac = turf.area(inter) / turf.area(c);
+        const ppl = Math.round(c.properties.pop * frac);
+        total += ppl;
+        details.push(`${c.properties.name}: ${ppl.toLocaleString()}`);
+      }
+    }catch{}
+  });
+  $('#popRead').textContent = `Population in effects: ${total.toLocaleString()}` + (details.length? ` — ${details.join(' • ')}`:'');
+}
+
+/* ========= wind HUD: drag/resize + compass + GPS ========= */
+const HUD=$('#windHUD'), Hhead=$('#windHead'), Hrez=$('#windResize');
+(function(){
+  const s=lsGet('HUDpos',{left:'10px',bottom:'10px',w:300,h:210});
+  HUD.style.left=s.left; HUD.style.bottom=s.bottom||'10px'; HUD.style.width=s.w+'px'; HUD.style.height=s.h+'px';
+  let drag=false,sx=0,sy=0,ox=0,oy=0;
+  Hhead.addEventListener('pointerdown',ev=>{drag=true;sx=ev.clientX;sy=ev.clientY; const r=HUD.getBoundingClientRect(); ox=r.left; oy=r.top; Hhead.setPointerCapture(ev.pointerId);});
+  Hhead.addEventListener('pointermove',ev=>{if(!drag)return; const dx=ev.clientX-sx, dy=ev.clientY-sy; HUD.style.left=(ox+dx)+'px'; HUD.style.top=(oy+dy)+'px'; HUD.style.bottom='auto';});
+  Hhead.addEventListener('pointerup',()=>{drag=false; save();});
+  let rez=false, rsx=0,rsy=0,rw=0,rh=0;
+  Hrez.addEventListener('pointerdown',ev=>{rez=true;rsx=ev.clientX;rsy=ev.clientY; const r=HUD.getBoundingClientRect(); rw=r.width; rh=r.height; Hrez.setPointerCapture(ev.pointerId);});
+  Hrez.addEventListener('pointermove',ev=>{ if(!rez)return; const dx=ev.clientX-rsx, dy=ev.clientY-rsy; HUD.style.width=Math.max(220,rw+dx)+'px'; HUD.style.height=Math.max(160,rh+dy)+'px'; });
+  Hrez.addEventListener('pointerup',()=>{rez=false; save();});
+  function save(){ const r=HUD.getBoundingClientRect(); lsSet('HUDpos',{left:HUD.style.left||r.left+'px',bottom:HUD.style.bottom||'10px',w:r.width,h:r.height}); }
+  $('#windCenter').onclick=()=>{ HUD.style.left='10px'; HUD.style.bottom='10px'; HUD.style.top='auto'; save(); };
+  $('#windHide').onclick=()=>{ HUD.style.display='none'; };
+})();
+const comp=$('#windCompass'), ctx=comp.getContext('2d');
+function drawCompass(){
+  const w=comp.width, h=comp.height, r=Math.min(w,h)/2-8, cx=w/2, cy=h/2;
+  ctx.clearRect(0,0,w,h);
+  ctx.save(); ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fillStyle='#0b0e12'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle='#1d2633'; ctx.stroke();
+  ctx.translate(cx,cy);
+  for(let i=0;i<36;i++){ ctx.save(); ctx.rotate(i*10*Math.PI/180); ctx.beginPath(); ctx.moveTo(0,-r+4); ctx.lineTo(0,-r+(i%9===0?14:8)); ctx.strokeStyle=i%9===0?'#fff':'#586275'; ctx.lineWidth=i%9===0?2:1; ctx.stroke(); ctx.restore(); }
+  ctx.save(); ctx.rotate(toRad(windDeg)); ctx.beginPath(); ctx.moveTo(0,10); ctx.lineTo(0,-r+16); ctx.strokeStyle:'#22d3ee'; ctx.lineWidth=4; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0,-r+16); ctx.lineTo(7,-r+34); ctx.lineTo(-7,-r+34); ctx.closePath(); ctx.fillStyle='#22d3ee'; ctx.fill(); ctx.restore(); ctx.restore();
+  $('#windRead').textContent = `${Math.round(windDeg)}° (${bearingToCardinal(windDeg)}), ${windSpd} m/s`;
+  $('#wind').value=Math.round(windDeg); $('#windNum').value=Math.round(windDeg);
+  $('#windSpd').value=windSpd; $('#windNumSpd').value=windSpd;
+  lsSet('windDeg',windDeg); lsSet('windSpd',windSpd);
+}
+function compDrag(ev){
+  const rect=comp.getBoundingClientRect();
+  const x=ev.clientX-rect.left-rect.width/2, y=ev.clientY-rect.top-rect.height/2;
+  windDeg=(toDeg(Math.atan2(x,-y))+360)%360; drawCompass(); updateETAFromLast();
+}
+comp.addEventListener('pointerdown',ev=>{compDrag(ev); comp.setPointerCapture(ev.pointerId);});
+comp.addEventListener('pointermove',ev=>{ if(ev.buttons) compDrag(ev);});
+$('#wind').addEventListener('input',e=>{ windDeg=+e.target.value; drawCompass(); updateETAFromLast(); });
+$('#windNum').addEventListener('input',e=>{ windDeg=+e.target.value; drawCompass(); updateETAFromLast(); });
+$('#windSpd').addEventListener('input',e=>{ windSpd=+e.target.value; drawCompass(); updateETAFromLast(); });
+$('#windNumSpd').addEventListener('input',e=>{ windSpd=+e.target.value; drawCompass(); updateETAFromLast(); });
+drawCompass();
+
+$('#btnGPS').onclick=async ()=>{
+  try{
+    const pos = await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(p=>res(p),e=>rej(e),{enableHighAccuracy:true,timeout:10000}));
+    myPos=[pos.coords.latitude,pos.coords.longitude];
+    if(useML){ new maplibregl.Marker({color:'#22c55e'}).setLngLat([myPos[1],myPos[0]]).addTo(mlmap); }
+    else{ L.marker(myPos).addTo(lmap); }
+    updateETAFromLast();
+  }catch{ alert('GPS failed'); }
+};
+
+/* ========= ETA + leave-shelter heuristic ========= */
+let lastBurst=null;
+function updateETAFromLast(){ if(lastBurst && myPos) updateETA(lastBurst, windDeg); }
+function updateETA(burstLatLng, brgDeg){
+  const [bLat,bLng]=burstLatLng; if(!myPos) return;
+  const [uLat,uLng]=myPos;
+  const dest = offsetOnEarth(bLat,bLng, 1000000, brgDeg, 0);
+  const line = turf.lineString([[bLng,bLat],[dest[1],dest[0]]]);
+  const pt = turf.point([uLng,uLat]);
+  const snapped = turf.nearestPointOnLine(line, pt);
+  const distKm = snapped.properties.location * 111.32; // rough deg->km
+  if(windSpd<=0){ $('#hudEta').textContent='ETA to you: wind=0'; return; }
+  const secs = (distKm*1000)/(windSpd);
+  const mins = Math.max(0, Math.round(secs/60));
+  $('#hudEta').textContent = `ETA to you: ${mins} min`;
+  $('#hudLeave').textContent = `Leave-shelter est: ~${mins+420} min (rule-of-7/10)`;
+}
+function placeBurstWrapper(latlng){ lastBurst=latlng; placeBurst(latlng); }
+const oldPlace=placeBurst; placeBurst=placeBurstWrapper;
+
+/* ========= Shelter Finder (terrain-aware) ========= */
+async function getElevation(lat,lng){
+  if(!useML) return null;
+  try{
+    // MapLibre exposes queryTerrainElevation when terrain is enabled
+    const el = mlmap.queryTerrainElevation({lng,lat});
+    return el; // meters
+  }catch{ return null; }
+}
+function dotMarker(lat,lng,ok=true){
+  if(useML){
+    const el=document.createElement('div'); el.className='shelter-dot'+(ok?'':' shelter-warn');
+    return new maplibregl.Marker({element:el}).setLngLat([lng,lat]).addTo(mlmap);
+  }else{
+    const c= ok?'#22c55e':'#f59e0b';
+    return L.circleMarker([lat,lng],{radius:6,color:'#0f172a',fillColor:c,fillOpacity:1,weight:2}).addTo(lmap);
+  }
+}
+function clearShelters(){ shelterMarkers.forEach(m=>m.remove && m.remove()); shelterMarkers=[]; $('#shelterRead').textContent='—'; }
+$('#clearShelter').onclick=clearShelters;
+
+$('#findShelter').onclick=async ()=>{
+  if(!myPos){ alert('Tap “My Position (GPS)” first.'); return; }
+  clearShelters();
+  const R=+$('#radius').value; // meters
+  const samples=36; // every 10 degrees
+  let best=null, bestScore=-1, lows=0, leeHits=0;
+  for(let i=0;i<samples;i++){
+    const brg=i*360/samples;
+    const pt=offsetOnEarth(myPos[0],myPos[1], R, brg, 0);
+    const lat=pt[0], lng=pt[1];
+    const centerEl = await getElevation(myPos[0],myPos[1]);
+    const el = await getElevation(lat,lng);
+    let score=0, why=[];
+    if(centerEl!=null && el!=null){
+      const delta = el-centerEl; // negative = lower than you
+      if(delta<-3){ score+=2; lows++; why.push('lower ground'); }
+      if(delta>4){ score-=1; why.push('ridge'); }
+    }
+    // leeward: angle from wind to candidate (180° ± 90°)
+    const rel = Math.abs((((brg - windDeg + 540)%360)-180));
+    if(rel<100){ score+=2; leeHits++; why.push('leeward'); }
+    // avoid direct downwind near centerline (hot fallout): penalize within ±15°
+    if(rel<15){ score-=2; why.push('downwind centerline'); }
+    const m = dotMarker(lat,lng,score>=2);
+    shelterMarkers.push(m);
+    if(score>bestScore){ bestScore=score; best={lat,lng,why}; }
+  }
+  if(best){
+    $('#shelterRead').textContent = `Best nearby: ${best.lat.toFixed(5)}, ${best.lng.toFixed(5)} — reasons: ${best.why.join(', ')}. Green dots are candidates; orange are weaker. Favor hard cover (culverts, berms, concrete).`;
+  }else{
+    $('#shelterRead').textContent = `No strong terrain advantages found here; prioritize hard cover (basements/interior rooms, culverts, underpasses) and distance cross-wind.`;
   }
 };
 
-/* ---------- model: radii & plume ---------- */
-/* Very compact approximation:
-   - psi rings scale ~ W^(1/3). Constants tuned for realism.
-   - Thermal radius approximated for 3rd degree burns (no terrain/urban shielding).
-   - Fallout ellipse length grows with yield^0.5 and shrinks with precipitation; direction = windDeg.
-   These are preparedness-grade visuals, not targeting data.
-*/
-function kmToPixels(lat, km, zoomMetersPerPixel){
-  // not needed for vector libs; kept for clarity
+/* ========= counties load ========= */
+let counties=null;
+async function loadCounties(){
+  try{ const r=await fetch('counties.json',{cache:'no-store'}); if(r.ok){ counties=await r.json(); return; } }catch{}
+  counties = JSON.parse(document.getElementById('countiesData').textContent);
 }
+loadCounties();
 
-function ringKm(yieldKt, psi){
-  const W = Math.cbrt(Math.max(0.1, yieldKt));
-  // constants (km) tuned to give reasonable scales
-  if(psi===20) return 0.9*W;
-  if(psi===5)  return 1.9*W;
-  if(psi===1)  return 4.2*W;
-  return 0;
-}
-function thermalKm(yieldKt){
-  const W = Math.cbrt(Math.max(0.1, yieldKt));
-  return 7.0*W; // coarse
-}
-function plumeParams(yieldKt, wx, alt){
-  const base = Math.sqrt(Math.max(0.1, yieldKt));
-  let len = 25*base;
-  let width = 6*base;
-  if(wx==='rain'){ len*=0.8; width*=0.7; }
-  if(wx==='snow'){ len*=0.9; width*=0.8; }
-  if(alt>300){ len*=0.6; width*=0.6; } // airburst -> less fallout
-  return {len, width};
-}
-
-/* ---------- draw helpers ---------- */
-let drawn = []; // store handles to clean up
-function llToXY(ll){ return useML? [ll[1], ll[0]] : ll; }
-
-function addCircle(lat,lng,rkm,color,opacity=0.25,label){
-  if(useML){
-    const id = 'c'+Math.random().toString(36).slice(2);
-    const coords = circleGeoJSON([lng,lat], rkm*1000, 90);
-    mlmap.addSource(id,{type:'geojson',data:coords});
-    mlmap.addLayer({id:id, type:'fill', source:id, paint:{'fill-color':color,'fill-opacity':opacity}});
-    const lineId=id+'l';
-    mlmap.addLayer({id:lineId,type:'line',source:id,paint:{'line-color':color,'line-width':2,'line-opacity':0.9}});
-    drawn.push({type:'mlsrc', id},{type:'mllayer', id},{type:'mllayer', id:lineId});
-    // label (approx): create HTML div anchored at circle edge (east)
-    addRingLabel(lat, lng, rkm, label);
+/* ========= population heat checkbox ========= */
+$('#popHeat').onchange=()=>{
+  if(!counties){ alert('Counties still loading'); $('#popHeat').checked=false; return; }
+  if($('#popHeat').checked){
+    if(useML){
+      mlmap.addSource('popHeat',{type:'geojson',data:counties});
+      mlmap.addLayer({id:'popHeat',type:'fill',source:'popHeat',
+        paint:{'fill-color':['interpolate',['linear'],['get','pop'],0,'#0f172a',50000,'#475569',300000,'#ef4444'],
+               'fill-opacity':0.25}});
+    }else{
+      popHeatLayer = L.geoJSON(counties,{style:f=>({color:'#444',weight:1,fillColor: (f.properties.pop>300000?'#ef4444':(f.properties.pop>100000?'#f59e0b':'#475569')),fillOpacity:0.25})}).addTo(lmap);
+    }
   }else{
-    const c = L.circle([lat,lng], {radius:rkm*1000,color,weight:2,fillColor:color,fillOpacity:opacity}).addTo(lmap);
-    c.on('click',()=> ringInfo(label));
-    drawn.push(c);
-    addRingLabel(lat, lng, rkm, label);
-  }
-}
-function addRingLabel(lat,lng,rkm,labelText){
-  // place roughly at east edge
-  const R = 6371; const d = rkm/R; const brg = 90*Math.PI/180;
-  const lat1 = lat*Math.PI/180, lon1 = lng*Math.PI/180;
-  const lat2 = Math.asin(Math.sin(lat1)*Math.cos(d)+Math.cos(lat1)*Math.sin(d)*Math.cos(brg));
-  const lon2 = lon1 + Math.atan2(Math.sin(brg)*Math.sin(d)*Math.cos(lat1), Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
-  const el = document.createElement('div'); el.className='ring-label'; el.textContent=labelText;
-  el.style.pointerEvents='none';
-  document.body.appendChild(el);
-  positionHTML(el,[lat2*180/Math.PI, lon2*180/Math.PI]);
-  drawn.push({type:'htmlel', el});
-}
-function addPlume(lat,lng,deg,lenKm,widthKm,color='#22c55e',opacity=0.22){
-  // rough ellipse wedge along bearing
-  const g = plumeGeoJSON([lng,lat], deg, lenKm, widthKm);
-  if(useML){
-    const id='p'+Math.random().toString(36).slice(2);
-    mlmap.addSource(id,{type:'geojson',data:g});
-    mlmap.addLayer({id:id, type:'fill', source:id, paint:{'fill-color':color,'fill-opacity':opacity}});
-    mlmap.addLayer({id:id+'l', type:'line', source:id, paint:{'line-color':color,'line-width':1.5}});
-    drawn.push({type:'mlsrc', id},{type:'mllayer', id},{type:'mllayer', id:id+'l'});
-  }else{
-    const poly = L.geoJSON(g,{style:{color,weight:1.5,fillColor:color,fillOpacity:opacity}}).addTo(lmap);
-    drawn.push(poly);
-  }
-}
-function clearBursts(){
-  bursts = [];
-  if(useML){
-    drawn.forEach(d=>{
-      if(d.type==='mllayer'){ try{ mlmap.removeLayer(d.id);}catch{} }
-      else if(d.type==='mlsrc'){ try{ mlmap.removeSource(d.id);}catch{} }
-      else if(d.type==='htmlel'){ d.el.remove(); }
-    });
-    drawn=[];
-  }else{
-    drawn.forEach(g=>{ try{ lmap.removeLayer(g);}catch{} });
-    drawn=[];
-    document.querySelectorAll('.ring-label').forEach(e=>e.remove());
-  }
-}
-function ringInfo(label){
-  alert(label + "\n\nTap different rings/plume to compare. These are preparedness-grade estimates.");
-}
-
-function placeBurst(ll){
-  const y = +$('#yield').value;
-  const a = +$('#alt').value;
-  const wx = $('#wx').value;
-  const lat = ll[0], lng = ll[1];
-  // draw rings
-  const r20 = ringKm(y,20), r5=ringKm(y,5), r1=ringKm(y,1), th=thermalKm(y);
-  addCircle(lat,lng,r20,col.psi20,0.28,'20 psi: severe collapse');
-  addCircle(lat,lng,r5 ,col.psi5 ,0.25,'5 psi: heavy damage');
-  addCircle(lat,lng,r1 ,col.psi1 ,0.22,'1 psi: light damage');
-  addCircle(lat,lng,th ,col.therm,0.15,'Thermal 3rd° burns');
-  // fallout plume
-  if($('#fallout').checked){
-    const p = plumeParams(y, wx, a);
-    addPlume(lat,lng, windDeg, p.len, p.width, col.fall, 0.22);
-  }
-  // marker
-  if(!useML){
-    const m=L.marker([lat,lng]).addTo(lmap); drawn.push(m);
-  }else{
-    const m = new maplibregl.Marker().setLngLat([lng,lat]).addTo(mlmap);
-    drawn.push({type:'marker', m});
+    if(useML){ try{ mlmap.removeLayer('popHeat'); mlmap.removeSource('popHeat'); }catch{} }
+    else{ try{ lmap.removeLayer(popHeatLayer);}catch{} popHeatLayer=null; }
   }
 }
 
-function updatePlumes(){
-  if(bursts.length===0) return; // not tracking individually in this minimal patch
+/* ========= calc population ========= */
+async function calcPopulation(){
+  if(!counties){ $('#popRead').textContent='Population: (loading counties…)'; return; }
+  if(effects.length===0){ $('#popRead').textContent='Population in current effects: —'; return; }
+  let union = effects[0].gj;
+  for(let i=1;i<effects.length;i++){ try{ union = turf.union(union, effects[i].gj); }catch{} }
+  let total=0, details=[];
+  counties.features.forEach(c=>{
+    try{
+      const inter = turf.intersect(union, c);
+      if(inter){
+        const frac = turf.area(inter) / turf.area(c);
+        const ppl = Math.round(c.properties.pop * frac);
+        total += ppl;
+        details.push(`${c.properties.name}: ${ppl.toLocaleString()}`);
+      }
+    }catch{}
+  });
+  $('#popRead').textContent = `Population in effects: ${total.toLocaleString()}` + (details.length? ` — ${details.join(' • ')}`:'');
 }
 
-/* ---------- geo helpers ---------- */
-function circleGeoJSON(center, radiusMeters, points){
-  const [lng,lat]=center; const coords=[];
-  for(let i=0;i<=points;i++){
-    const brg = i/points*2*Math.PI;
-    const d = radiusMeters/6371000;
-    const lat1 = toRad(lat), lon1 = toRad(lng);
-    const lat2 = Math.asin(Math.sin(lat1)*Math.cos(d)+Math.cos(lat1)*Math.sin(d)*Math.cos(brg));
-    const lon2 = lon1 + Math.atan2(Math.sin(brg)*Math.sin(d)*Math.cos(lat1), Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
-    coords.push([toDeg(lon2), toDeg(lat2)]);
-  }
-  return {type:'Feature',geometry:{type:'Polygon',coordinates:[coords]}};
-}
-function plumeGeoJSON(centerDeg, bearingDeg, lenKm, widthKm){
-  const [lng0,lat0]=centerDeg;
-  const coords=[], N=120;
-  const lenM=lenKm*1000, halfW=widthKm*500; // half width in meters
-  // build a tapered capsule/ellipse along bearing
-  for(let i=0;i<=N;i++){
-    const t=i/N;
-    const dist = t*lenM;
-    const w = Math.sin(Math.PI*Math.min(1,t))*halfW; // taper
-    // offset right side
-    coords.push(offsetOnEarth(lat0,lng0, dist, bearingDeg,  w));
-  }
-  for(let i=N;i>=0;i--){
-    const t=i/N;
-    const dist = t*lenM;
-    const w = Math.sin(Math.PI*Math.min(1,t))*halfW;
-    coords.push(offsetOnEarth(lat0,lng0, dist, bearingDeg, -w));
-  }
-  return {type:'Feature',geometry:{type:'Polygon',coordinates:[coords]}};
-}
-function offsetOnEarth(lat,lng, forwardMeters, bearingDeg, rightMeters){
-  // move forward, then offset right by perpendicular
-  const R=6371000;
-  const brg=toRad(bearingDeg);
-  const lat1=toRad(lat), lon1=toRad(lng);
-  const d=forwardMeters/R;
-  const lat2=Math.asin(Math.sin(lat1)*Math.cos(d)+Math.cos(lat1)*Math.sin(d)*Math.cos(brg));
-  const lon2=lon1+Math.atan2(Math.sin(brg)*Math.sin(d)*Math.cos(lat1),Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
-  // perpendicular shift
-  const brg2=brg+Math.PI/2;
-  const d2=rightMeters/R;
-  const lat3=Math.asin(Math.sin(lat2)*Math.cos(d2)+Math.cos(lat2)*Math.sin(d2)*Math.cos(brg2));
-  const lon3=lon2+Math.atan2(Math.sin(brg2)*Math.sin(d2)*Math.cos(lat2),Math.cos(d2)-Math.sin(lat2)*Math.sin(lat3));
-  return [toDeg(lon3), toDeg(lat3)];
+/* ========= map click hook already set in init ========= */
+
+/* ========= helpers ========= */
+function positionHTML(el,ll){
+  const cont=useML?mlmap.getContainer():lmap.getContainer(); const rect=cont.getBoundingClientRect();
+  const pt= useML ? mlmap.project({lng:ll[1],lat:ll[0]}) : lmap.latLngToLayerPoint(L.latLng(ll[0],ll[1]));
+  el.style.left=(rect.left+pt.x)+'px'; el.style.top=(rect.top+pt.y)+'px';
 }
 
-/* ---------- map HTML overlay positioning (for ring labels) ---------- */
-function project(ll){
-  if(useML){
-    const p = mlmap.project({lng:ll[1],lat:ll[0]});
-    return [p.x,p.y];
-  }else{
-    return lmap.latLngToLayerPoint(L.latLng(ll[0], ll[1]));
-  }
-}
-function positionHTML(el, ll){
-  const container = useML ? mlmap.getContainer() : lmap.getContainer();
-  const rect = container.getBoundingClientRect();
-  const [x,y]=project(ll);
-  el.style.left = (rect.left + x) + 'px';
-  el.style.top  = (rect.top  + y) + 'px';
-}
-window.addEventListener('resize',()=>document.querySelectorAll('.ring-label').forEach(e=>e.remove()));
-
-function syncWindHUD(){ /* reserved for future use */ }
-
-/* ---------- start with legend visible ---------- */
-legend.hidden=false;
+/* ========= end ========= */
 </script>
 </body>
 </html>
