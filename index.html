@@ -5,13 +5,12 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
 <title>Nuke Effects – Terrain 3D + Population + Shelter HUD</title>
 
-<!-- MapLibre GL (3D) + Leaflet fallback -->
 <link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet"/>
 <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
+
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-<!-- Turf.js for geometry & intersections -->
 <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
 
 <style>
@@ -28,7 +27,6 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:
 #mapwrap{position:relative}
 #mlmap,#map{position:absolute;inset:0}
 
-/* right-side stacked overlays */
 #stack{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:10px;z-index:10;width:min(92vw,300px)}
 .panel{background:#0b0e12dd;border:1px solid #1d2633;border-radius:10px;backdrop-filter:blur(4px)}
 .panel header{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid #1d2633;cursor:pointer}
@@ -41,7 +39,6 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:
 .row input[type="range"]{width:100%;accent-color:var(--accent)}
 .smallbtn{padding:4px 8px;border-radius:8px;border:1px solid #1d2633;background:#0b0e12;color:var(--fg);cursor:pointer}
 
-/* wind HUD (draggable/resizable) */
 #windHUD{position:absolute;left:10px;bottom:10px;z-index:11;background:#0b0e12ee;border:1px solid #1d2633;border-radius:12px;box-shadow:0 2px 8px #0008;min-width:220px}
 #windHead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-bottom:1px solid #1d2633;cursor:move}
 #windBody{display:flex;gap:10px;align-items:center;padding:8px 10px}
@@ -50,12 +47,9 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:
 #windFoot{display:flex;gap:6px;padding:0 10px 10px 10px;flex-wrap:wrap}
 #windFoot input{width:84px}
 
-/* ring labels */
 .ring-label{position:absolute;transform:translate(-50%,-50%);background:#0b0e12cc;padding:2px 6px;border:1px solid #1d2633;border-radius:8px;font-size:12px;pointer-events:none}
 
-/* shelter markers */
-.shelter-dot{width:10px;height:10px;border-radius:50%;border:2px solid #0f172a;background:#22c55e;box-shadow:0 0 6px #22c55e}
-.shelter-warn{background:#f59e0b;box-shadow:0 0 6px #f59e0b}
+.err{position:absolute;left:10px;top:10px;background:#7f1d1d;color:#fff;padding:8px 12px;border-radius:8px;display:none;z-index:20}
 </style>
 </head>
 <body>
@@ -90,9 +84,7 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:
     <div id="mlmap"></div>
     <div id="map"></div>
 
-    <!-- Right-side stacked overlays -->
     <div id="stack">
-      <!-- Legend -->
       <div class="panel open" id="pLegend">
         <header><div>Legend</div><div>▾</div></header>
         <div class="content">
@@ -105,7 +97,6 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:
         </div>
       </div>
 
-      <!-- Tiles / Terrain -->
       <div class="panel open" id="pTiles">
         <header><div>Tiles / Terrain</div><div>▾</div></header>
         <div class="content">
@@ -122,7 +113,6 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:
         </div>
       </div>
 
-      <!-- Overlays / Population -->
       <div class="panel" id="pOver">
         <header><div>Overlays / Population</div><div>▾</div></header>
         <div class="content">
@@ -134,7 +124,6 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:
         </div>
       </div>
 
-      <!-- Shelter Finder -->
       <div class="panel" id="pShelter">
         <header><div>Shelter Finder (terrain-aware)</div><div>▾</div></header>
         <div class="content">
@@ -151,13 +140,12 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:
             <button class="smallbtn" id="findShelter">Suggest spots</button>
             <button class="smallbtn" id="clearShelter">Clear</button>
           </div>
-          <div class="note">We prefer **leeward** slopes and low cuts relative to wind. Always favor solid cover: interior rooms, basements, culverts, embankments.</div>
+          <div class="note">We prefer leeward slopes/low cuts relative to wind. Always favor hard cover.</div>
           <div id="shelterRead" class="note">—</div>
         </div>
       </div>
     </div>
 
-    <!-- Wind HUD -->
     <div id="windHUD">
       <div id="windHead"><div style="font-weight:600">Wind / Fallout Timing</div><div id="windRead" class="note">90° (E), 10 m/s</div></div>
       <div id="windBody">
@@ -176,10 +164,12 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:
       </div>
       <div id="windResize" title="Resize"></div>
     </div>
+
+    <div id="err" class="err"></div>
   </div>
 </div>
 
-<!-- Lightweight county polygons (demo). Drop a full "counties.json" in repo to upgrade automatically. -->
+<!-- Demo county snippets; replace with counties.json for full USA -->
 <script id="countiesData" type="application/json">
 {
   "type":"FeatureCollection",
@@ -203,7 +193,6 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:
 </script>
 
 <script>
-/* ========= helpers ========= */
 const $=s=>document.querySelector(s);
 const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -211,49 +200,46 @@ const bearingToCardinal=b=>['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW',
 const getCSS=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 function lsGet(k,def){ try{const v=localStorage.getItem(k); return v?JSON.parse(v):def;}catch{return def} }
 function lsSet(k,v){ try{localStorage.setItem(k,JSON.stringify(v));}catch{} }
+const showErr=msg=>{ const e=$('#err'); e.textContent=msg; e.style.display='block'; };
 
-/* ========= state ========= */
 let useML=false, mlmap, lmap;
-let addMode=false, windDeg=lsGet('windDeg',90), windSpd=lsGet('windSpd',10); // m/s
-let effects=[]; // GeoJSON effects for population calc
-let myPos=null; // [lat,lng]
-let popHeatLayer=null;
-let shelterMarkers=[];
+let addMode=false, windDeg=lsGet('windDeg',90), windSpd=lsGet('windSpd',10);
+let effects=[]; let myPos=null; let popHeatLayer=null; let shelterMarkers=[]; let lastBurst=null;
+let counties=null;
 
-/* ========= init maps (with terrain) ========= */
 function webglOk(){ try{const c=document.createElement('canvas');return !!(window.WebGLRenderingContext&&(c.getContext('webgl')||c.getContext('experimental-webgl')));}catch{return false} }
 
 function initMap(){
   const start=[45.85,-123.49];
   if(webglOk()){
     useML=true; $('#map').style.display='none';
-    mlmap = new maplibregl.Map({
-      container:'mlmap',
-      style:{
-        "version":8,
-        "sources":{
-          "osm":{"type":"raster","tiles":["https://a.tile.openstreetmap.org/{z}/{x}/{y}.png","https://b.tile.openstreetmap.org/{z}/{x}/{y}.png","https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"],"tileSize":256,"attribution":"© OSM"},
-          "sat":{"type":"raster","tiles":["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],"tileSize":256}, /* demo placeholder */
-          "grid":{"type":"raster","tiles":["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],"tileSize":256},
-          /* public demo DEM tiles provided by MapLibre */
-          "terrain-dem":{"type":"raster-dem","tiles":["https://demotiles.maplibre.org/terrain-tiles/{z}/{x}/{y}.png"],"tileSize":256,"attribution":"Terrain © MapLibre demo"}
+    try{
+      mlmap = new maplibregl.Map({
+        container:'mlmap',
+        style:{
+          "version":8,
+          "sources":{
+            "osm":{"type":"raster","tiles":["https://a.tile.openstreetmap.org/{z}/{x}/{y}.png","https://b.tile.openstreetmap.org/{z}/{x}/{y}.png","https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"],"tileSize":256,"attribution":"© OSM"},
+            "sat":{"type":"raster","tiles":["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],"tileSize":256},
+            "grid":{"type":"raster","tiles":["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],"tileSize":256},
+            "terrain-dem":{"type":"raster-dem","tiles":["https://demotiles.maplibre.org/terrain-tiles/{z}/{x}/{y}.png"],"tileSize":256,"attribution":"Terrain © MapLibre demo"}
+          },
+          "layers":[
+            {"id":"baseraster","type":"raster","source":"osm","minzoom":0,"maxzoom":19},
+            {"id":"hillshade","type":"hillshade","source":"terrain-dem","layout":{"visibility":"visible"},"paint":{"hillshade-shadow-color":"#000","hillshade-highlight-color":"#fff","hillshade-exaggeration":0.6}}
+          ],
+          "terrain":{"source":"terrain-dem","exaggeration":1.4}
         },
-        "layers":[
-          {"id":"baseraster","type":"raster","source":"osm","minzoom":0,"maxzoom":19},
-          {"id":"hillshade","type":"hillshade","source":"terrain-dem","layout":{"visibility":"visible"},"paint":{"hillshade-shadow-color":"#000","hillshade-highlight-color":"#fff","hillshade-exaggeration":0.6}}
-        ],
-        "terrain":{"source":"terrain-dem","exaggeration":1.4}
-      },
-      center:[start[1],start[0]], zoom:8.6, pitch:40, bearing:0,
-      touchZoomRotate:true, pitchWithRotate:true
-    });
-    mlmap.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-left');
-    mlmap.addControl(new maplibregl.ScaleControl({maxWidth:120,unit:'imperial'}));
-    mlmap.on('click',e=>{ if(addMode){ placeBurst([e.lngLat.lat,e.lngLat.lng]); addMode=false; $('#add').classList.remove('active'); }});
+        center:[start[1],start[0]], zoom:8.6, pitch:40, bearing:0,
+        touchZoomRotate:true, pitchWithRotate:true
+      });
+      mlmap.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-left');
+      mlmap.addControl(new maplibregl.ScaleControl({maxWidth:120,unit:'imperial'}));
+      mlmap.on('click',e=>{ if(addMode){ placeBurst([e.lngLat.lat,e.lngLat.lng]); addMode=false; $('#add').classList.remove('active'); }});
+    }catch(err){ showErr('Map init error: '+err.message); }
   }else{
     useML=false; $('#mlmap').style.display='none';
     lmap=L.map('map').setView(start,9);
-    // base OSM + hillshade overlay (fallback)
     const base = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(lmap);
     const shade= L.tileLayer('https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',{opacity:0.5}).addTo(lmap);
     lmap.on('click',e=>{ if(addMode){ placeBurst([e.latlng.lat,e.latlng.lng]); addMode=false; $('#add').classList.remove('active'); }});
@@ -261,12 +247,12 @@ function initMap(){
 }
 initMap();
 
-/* ========= panel toggles ========= */
+/* panels */
 for(const p of document.querySelectorAll('.panel header')){
   p.addEventListener('click',()=>p.parentElement.classList.toggle('open'));
 }
 
-/* ========= top bar actions ========= */
+/* bar */
 $('#preset').onchange=e=>{ if(e.target.value!=='custom') $('#yield').value=e.target.value; };
 $('#add').onclick=()=>{ addMode=!addMode; $('#add').classList.toggle('active',addMode); };
 $('#clear').onclick=()=>{ clearMap(); };
@@ -274,7 +260,6 @@ $('#refreshTiles').onclick=()=>{ refreshTiles(); };
 $('#btnRefresh2').onclick=()=>{ refreshTiles(); };
 $('#bmSel').onchange=e=>{ $('#basemap').value=e.target.value; refreshTiles(); };
 $('#basemap').onchange=()=>{ refreshTiles(); };
-$('#wx').onchange=()=>{};
 $('#precip').oninput=e=>{ $('#precipVal').textContent=e.target.value; };
 $('#humid').oninput=e=>{ $('#humidVal').textContent=e.target.value; };
 $('#calcPop').onclick=calcPopulation;
@@ -287,36 +272,19 @@ function refreshTiles(){
   if(useML){
     const sel=$('#basemap').value;
     const src= sel==='osm'?'osm': (sel==='sat'?'sat':'osm');
-    try{ mlmap.setLayoutProperty('baseraster','visibility','none'); }catch{}
-    try{ mlmap.removeLayer('baseraster'); }catch{}
+    try{ if(mlmap.getLayer('baseraster')) mlmap.removeLayer('baseraster'); }catch{}
     mlmap.addLayer({"id":"baseraster","type":"raster","source":src,"minzoom":0,"maxzoom":19}, 'hillshade');
   }else{
-    // Leaflet fallback just reloads
     lmap.eachLayer(l=>{ if(l._url) l.remove(); });
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(lmap);
     L.tileLayer('https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',{opacity:0.5}).addTo(lmap);
   }
 }
-function toggleTerrain(){
-  if(!useML) return;
-  const on=$('#terrainOn').checked;
-  if(on){
-    mlmap.setTerrain({source:'terrain-dem',exaggeration:+$('#exagg').value});
-  }else{
-    mlmap.setTerrain(null);
-  }
-}
-function toggleHillshade(){
-  if(!useML) return;
-  const vis = $('#hillshadeOn').checked?'visible':'none';
-  try{ mlmap.setLayoutProperty('hillshade','visibility',vis); }catch{}
-}
-function setExaggeration(x){
-  if(!useML) return;
-  try{ mlmap.setTerrain({source:'terrain-dem',exaggeration:x}); }catch{}
-}
+function toggleTerrain(){ if(useML) mlmap.setTerrain($('#terrainOn').checked?{source:'terrain-dem',exaggeration:+$('#exagg').value}:null); }
+function toggleHillshade(){ if(!useML) return; const vis=$('#hillshadeOn').checked?'visible':'none'; try{ mlmap.setLayoutProperty('hillshade','visibility',vis);}catch{} }
+function setExaggeration(x){ if(useML) try{ mlmap.setTerrain({source:'terrain-dem',exaggeration:x}); }catch{} }
 
-/* ========= models ========= */
+/* models */
 function ringKm(y,psi){ const W=Math.cbrt(Math.max(0.1,y)); if(psi===20) return 0.9*W; if(psi===5) return 1.9*W; if(psi===1) return 4.2*W; return 0; }
 function thermalKm(y){ return 7.0*Math.cbrt(Math.max(0.1,y)); }
 function plumeParams(y, wx, alt, precipPct, humidPct){
@@ -329,16 +297,16 @@ function plumeParams(y, wx, alt, precipPct, humidPct){
   return {len,width};
 }
 
-/* ========= geometry ========= */
+/* geometry */
 function circleGJ(center, radiusM, steps=120){
   const [lng,lat]=center; const out=[];
   for(let i=0;i<=steps;i++){
     const brg=i/steps*2*Math.PI, d=radiusM/6371000, lat1=toRad(lat), lon1=toRad(lng);
-    const lat2=Math.asin(Math.sin(lat1)*Math.cos(d)+Math.cos(lat1)*Math.sin(d)*Math.cos(brg));
+    const lat2=Math.asin(Math.sin(lat1)*cos(d)+cos(lat1)*sin(d)*cos(brg));
     const lon2=lon1+Math.atan2(Math.sin(brg)*Math.sin(d)*Math.cos(lat1),Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
-    out.push([toDeg(lon2),toDeg(lat2)]);
   }
-  return turf.polygon([out]);
+  function sin(x){return Math.sin(x)} function cos(x){return Math.cos(x)}
+  return turf.circle([lng,lat], radiusM/1000, {steps});
 }
 function offsetOnEarth(lat,lng, fwdM, brgDeg, rightM){
   const R=6371000, b=toRad(brgDeg), d=fwdM/R, lat1=toRad(lat), lon1=toRad(lng);
@@ -347,16 +315,16 @@ function offsetOnEarth(lat,lng, fwdM, brgDeg, rightM){
   const b2=b+Math.PI/2, d2=rightM/R;
   const lat3=Math.asin(Math.sin(lat2)*Math.cos(d2)+Math.cos(lat2)*Math.sin(d2)*Math.cos(b2));
   const lon3=lon2+Math.atan2(Math.sin(b2)*Math.sin(d2)*Math.cos(lat2),Math.cos(d2)-Math.sin(lat2)*Math.sin(lat3));
-  return [toDeg(lon3),toDeg(lat3)];
+  return [toDeg(lat3),toDeg(lon3)];
 }
 function plumeGJ(center, brgDeg, lenKm, widthKm){
   const [lng0,lat0]=center, coords=[], N=120, lenM=lenKm*1000, halfW=widthKm*500;
-  for(let i=0;i<=N;i++){ const t=i/N, dist=t*lenM, w=Math.sin(Math.PI*Math.min(1,t))*halfW; coords.push(offsetOnEarth(lat0,lng0,dist,brgDeg, w)); }
-  for(let i=N;i>=0;i--){ const t=i/N, dist=t*lenM, w=Math.sin(Math.PI*Math.min(1,t))*halfW; coords.push(offsetOnEarth(lat0,lng0,dist,brgDeg,-w)); }
+  for(let i=0;i<=N;i++){ const t=i/N, dist=t*lenM, w=Math.sin(Math.PI*Math.min(1,t))*halfW; coords.push(offsetOnEarth(lat0,lng0,dist,brgDeg, w).reverse()); }
+  for(let i=N;i>=0;i--){ const t=i/N, dist=t*lenM, w=Math.sin(Math.PI*Math.min(1,t))*halfW; coords.push(offsetOnEarth(lat0,lng0,dist,brgDeg,-w).reverse()); }
   return turf.polygon([coords]);
 }
 
-/* ========= drawing (both engines) ========= */
+/* drawing */
 let layersML=[], layersLF=[];
 function addFill(gj,id,color,fop,line=true){
   if(useML){
@@ -369,72 +337,53 @@ function addFill(gj,id,color,fop,line=true){
     layersLF.push(lay);
   }
 }
-function addMarker(lat,lng){
-  if(useML){ new maplibregl.Marker().setLngLat([lng,lat]).addTo(mlmap); }
-  else{ L.marker([lat,lng]).addTo(lmap); }
-}
+function addMarker(lat,lng){ if(useML){ new maplibregl.Marker().setLngLat([lng,lat]).addTo(mlmap); } else { L.marker([lat,lng]).addTo(lmap); } }
 function clearMap(){
   effects=[]; document.querySelectorAll('.ring-label').forEach(e=>e.remove());
   if(useML){
     layersML.forEach(id=>{ try{ mlmap.removeLayer(id+'l'); }catch{} try{ mlmap.removeLayer(id); }catch{} try{ mlmap.removeSource(id);}catch{} });
     layersML=[];
-  }else{
-    layersLF.forEach(l=>{ try{ l.remove(); }catch{} }); layersLF=[];
-  }
+  }else{ layersLF.forEach(l=>{ try{ l.remove(); }catch{} }); layersLF=[]; }
   if(popHeatLayer){ if(useML){ try{ mlmap.removeLayer('popHeat'); mlmap.removeSource('popHeat'); }catch{} } else { try{ lmap.removeLayer(popHeatLayer);}catch{} } popHeatLayer=null; }
   shelterMarkers.forEach(m=>m.remove && m.remove()); shelterMarkers=[];
   $('#popRead').textContent='Population in current effects: —';
   $('#shelterRead').textContent='—';
 }
 
-/* ========= burst placement ========= */
-function placeBurst([lat,lng]){
+/* bursts */
+function ringKmMiles(m){ return (m*0.621371).toFixed(1)+' mi'; }
+function placeBurst(latlng){
+  lastBurst=latlng;
+  const [lat,lng]=latlng;
   const y=+$('#yield').value, a=+$('#alt').value, wx=$('#wx').value;
   const precip=+$('#precip').value, humid=+$('#humid').value;
-
   addMarker(lat,lng);
-
   const r20=ringKm(y,20), r5=ringKm(y,5), r1=ringKm(y,1), th=thermalKm(y);
-  const c20=circleGJ([lng,lat], r20*1000), c5=circleGJ([lng,lat], r5*1000), c1=circleGJ([lng,lat], r1*1000), cT=circleGJ([lng,lat], th*1000);
-
+  const c20=turf.circle([lng,lat], r20, {steps:128}); const c5=turf.circle([lng,lat], r5, {steps:128});
+  const c1=turf.circle([lng,lat], r1, {steps:128}); const cT=turf.circle([lng,lat], th, {steps:128});
   addFill(c20,'r20_'+Math.random(), getCSS('--psi20'), .28);
   addFill(c5 ,'r5_' +Math.random(), getCSS('--psi5') , .25);
   addFill(c1 ,'r1_' +Math.random(), getCSS('--psi1') , .22);
   addFill(cT ,'rT_' +Math.random(), getCSS('--therm'), .15);
-
   if($('#fallout').checked){
     const p=plumeParams(y,wx,a,precip,humid);
     const plume=plumeGJ([lng,lat], windDeg, p.len, p.width);
     addFill(plume,'pl_'+Math.random(), getCSS('--fall'), .22,false);
     effects.push({gj:plume,label:'Fallout plume'});
   }
-
   effects.push({gj:c20,label:'20 psi'}); effects.push({gj:c5,label:'5 psi'}); effects.push({gj:c1,label:'1 psi'}); effects.push({gj:cT,label:'Thermal 3rd°'});
-  calcPopulation();
-  if(myPos) updateETA([lat,lng], windDeg);
-  labelRings([lat,lng], {r20,r5,r1,th});
+  calcPopulation(); if(myPos) updateETA([lat,lng], windDeg);
 }
 
-/* ========= ring labels ========= */
-function labelRings([lat,lng], R){
-  const pairs=[['20 psi',R.r20],['5 psi',R.r5],['1 psi',R.r1],['Thermal',R.th]];
-  pairs.forEach(([txt,km])=>{
-    const Rearth=6371, d=km/Rearth, brg=toRad(90), lat1=toRad(lat), lon1=toRad(lng);
-    const lat2=Math.asin(Math.sin(lat1)*Math.cos(d)+Math.cos(lat1)*Math.sin(d)*Math.cos(brg));
-    const lon2=lon1+Math.atan2(Math.sin(brg)*Math.sin(d)*Math.cos(lat1),Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
-    const el=document.createElement('div'); el.className='ring-label'; el.textContent=`${txt}`;
-    document.body.appendChild(el);
-    positionHTML(el,[toDeg(lat2),toDeg(lon2)]);
-  });
-}
-function positionHTML(el,ll){
+/* ring label helpers (simple east label) */
+function labelAt(lat,lng,txt){
+  const el=document.createElement('div'); el.className='ring-label'; el.textContent=txt; document.body.appendChild(el);
   const cont=useML?mlmap.getContainer():lmap.getContainer(); const rect=cont.getBoundingClientRect();
-  const pt= useML ? mlmap.project({lng:ll[1],lat:ll[0]}) : lmap.latLngToLayerPoint(L.latLng(ll[0],ll[1]));
-  el.style.left=(rect.left+pt.x)+'px'; el.style.top=(rect.top+pt.y)+'px';
+  const proj = useML ? mlmap.project({lng:lng+0.05,lat}) : lmap.latLngToLayerPoint([lat,lng]);
+  el.style.left=(rect.left+proj.x)+'px'; el.style.top=(rect.top+proj.y)+'px';
 }
 
-/* ========= population heat & calc ========= */
-let counties=null;
+/* population */
 async function loadCounties(){
   try{ const r=await fetch('counties.json',{cache:'no-store'}); if(r.ok){ counties=await r.json(); return; } }catch{}
   counties = JSON.parse(document.getElementById('countiesData').textContent);
@@ -447,17 +396,15 @@ $('#popHeat').onchange=()=>{
     if(useML){
       mlmap.addSource('popHeat',{type:'geojson',data:counties});
       mlmap.addLayer({id:'popHeat',type:'fill',source:'popHeat',
-        paint:{'fill-color':['interpolate',['linear'],['get','pop'],0,'#0f172a',50000,'#475569',300000,'#ef4444'],
-               'fill-opacity':0.25}});
+        paint:{'fill-color':['interpolate',['linear'],['get','pop'],0,'#0f172a',50000,'#475569',300000,'#ef4444'],'fill-opacity':0.25}});
     }else{
-      popHeatLayer = L.geoJSON(counties,{style:f=>({color:'#444',weight:1,fillColor:popColor(f.properties.pop),fillOpacity:0.25})}).addTo(lmap);
+      popHeatLayer = L.geoJSON(counties,{style:f=>({color:'#444',weight:1,fillColor: f.properties.pop>300000?'#ef4444':(f.properties.pop>100000?'#f59e0b':'#475569'),fillOpacity:0.25})}).addTo(lmap);
     }
   }else{
     if(useML){ try{ mlmap.removeLayer('popHeat'); mlmap.removeSource('popHeat'); }catch{} }
     else{ try{ lmap.removeLayer(popHeatLayer);}catch{} popHeatLayer=null; }
   }
-}
-function popColor(p){ return p>300000?'#ef4444':p>100000?'#f59e0b':'#475569'; }
+};
 
 async function calcPopulation(){
   if(!counties){ $('#popRead').textContent='Population: (loading counties…)'; return; }
@@ -479,9 +426,8 @@ async function calcPopulation(){
   $('#popRead').textContent = `Population in effects: ${total.toLocaleString()}` + (details.length? ` — ${details.join(' • ')}`:'');
 }
 
-/* ========= wind HUD: drag/resize + compass + GPS ========= */
-const HUD=$('#windHUD'), Hhead=$('#windHead'), Hrez=$('#windResize');
-(function(){
+/* wind HUD */
+const HUD=$('#windHUD'), Hhead=$('#windHead'), Hrez=$('#windResize'); (function(){
   const s=lsGet('HUDpos',{left:'10px',bottom:'10px',w:300,h:210});
   HUD.style.left=s.left; HUD.style.bottom=s.bottom||'10px'; HUD.style.width=s.w+'px'; HUD.style.height=s.h+'px';
   let drag=false,sx=0,sy=0,ox=0,oy=0;
@@ -530,11 +476,10 @@ $('#btnGPS').onclick=async ()=>{
     if(useML){ new maplibregl.Marker({color:'#22c55e'}).setLngLat([myPos[1],myPos[0]]).addTo(mlmap); }
     else{ L.marker(myPos).addTo(lmap); }
     updateETAFromLast();
-  }catch{ alert('GPS failed'); }
+  }catch{ showErr('GPS failed (permissions or no fix)'); }
 };
 
-/* ========= ETA + leave-shelter heuristic ========= */
-let lastBurst=null;
+/* ETA */
 function updateETAFromLast(){ if(lastBurst && myPos) updateETA(lastBurst, windDeg); }
 function updateETA(burstLatLng, brgDeg){
   const [bLat,bLng]=burstLatLng; if(!myPos) return;
@@ -543,128 +488,51 @@ function updateETA(burstLatLng, brgDeg){
   const line = turf.lineString([[bLng,bLat],[dest[1],dest[0]]]);
   const pt = turf.point([uLng,uLat]);
   const snapped = turf.nearestPointOnLine(line, pt);
-  const distKm = snapped.properties.location * 111.32; // rough deg->km
+  const distKm = snapped.properties.location * 111.32;
   if(windSpd<=0){ $('#hudEta').textContent='ETA to you: wind=0'; return; }
   const secs = (distKm*1000)/(windSpd);
   const mins = Math.max(0, Math.round(secs/60));
   $('#hudEta').textContent = `ETA to you: ${mins} min`;
   $('#hudLeave').textContent = `Leave-shelter est: ~${mins+420} min (rule-of-7/10)`;
 }
-function placeBurstWrapper(latlng){ lastBurst=latlng; placeBurst(latlng); }
-const oldPlace=placeBurst; placeBurst=placeBurstWrapper;
 
-/* ========= Shelter Finder (terrain-aware) ========= */
-async function getElevation(lat,lng){
-  if(!useML) return null;
-  try{
-    // MapLibre exposes queryTerrainElevation when terrain is enabled
-    const el = mlmap.queryTerrainElevation({lng,lat});
-    return el; // meters
-  }catch{ return null; }
-}
+/* shelter */
+async function getElevation(lat,lng){ if(!useML) return null; try{ return mlmap.queryTerrainElevation({lng,lat}); }catch{ return null; } }
 function dotMarker(lat,lng,ok=true){
   if(useML){
     const el=document.createElement('div'); el.className='shelter-dot'+(ok?'':' shelter-warn');
     return new maplibregl.Marker({element:el}).setLngLat([lng,lat]).addTo(mlmap);
   }else{
-    const c= ok?'#22c55e':'#f59e0b';
-    return L.circleMarker([lat,lng],{radius:6,color:'#0f172a',fillColor:c,fillOpacity:1,weight:2}).addTo(lmap);
+    const c= ok?'#22c55e':'#f59e0b'; return L.circleMarker([lat,lng],{radius:6,color:'#0f172a',fillColor:c,fillOpacity:1,weight:2}).addTo(lmap);
   }
 }
 function clearShelters(){ shelterMarkers.forEach(m=>m.remove && m.remove()); shelterMarkers=[]; $('#shelterRead').textContent='—'; }
 $('#clearShelter').onclick=clearShelters;
-
 $('#findShelter').onclick=async ()=>{
   if(!myPos){ alert('Tap “My Position (GPS)” first.'); return; }
   clearShelters();
-  const R=+$('#radius').value; // meters
-  const samples=36; // every 10 degrees
-  let best=null, bestScore=-1, lows=0, leeHits=0;
+  const R=+$('#radius').value; const samples=36;
+  let best=null, bestScore=-1;
+  const centerEl = await getElevation(myPos[0],myPos[1]);
   for(let i=0;i<samples;i++){
-    const brg=i*360/samples;
-    const pt=offsetOnEarth(myPos[0],myPos[1], R, brg, 0);
-    const lat=pt[0], lng=pt[1];
-    const centerEl = await getElevation(myPos[0],myPos[1]);
+    const brg=i*360/samples; const pt=offsetOnEarth(myPos[0],myPos[1], R, brg, 0); const lat=pt[0], lng=pt[1];
     const el = await getElevation(lat,lng);
     let score=0, why=[];
-    if(centerEl!=null && el!=null){
-      const delta = el-centerEl; // negative = lower than you
-      if(delta<-3){ score+=2; lows++; why.push('lower ground'); }
-      if(delta>4){ score-=1; why.push('ridge'); }
-    }
-    // leeward: angle from wind to candidate (180° ± 90°)
+    if(centerEl!=null && el!=null){ const delta = el-centerEl; if(delta<-3){ score+=2; why.push('lower ground'); } if(delta>4){ score-=1; why.push('ridge'); } }
     const rel = Math.abs((((brg - windDeg + 540)%360)-180));
-    if(rel<100){ score+=2; leeHits++; why.push('leeward'); }
-    // avoid direct downwind near centerline (hot fallout): penalize within ±15°
+    if(rel<100){ score+=2; why.push('leeward'); }
     if(rel<15){ score-=2; why.push('downwind centerline'); }
-    const m = dotMarker(lat,lng,score>=2);
-    shelterMarkers.push(m);
+    const m = dotMarker(lat,lng,score>=2); shelterMarkers.push(m);
     if(score>bestScore){ bestScore=score; best={lat,lng,why}; }
   }
-  if(best){
-    $('#shelterRead').textContent = `Best nearby: ${best.lat.toFixed(5)}, ${best.lng.toFixed(5)} — reasons: ${best.why.join(', ')}. Green dots are candidates; orange are weaker. Favor hard cover (culverts, berms, concrete).`;
-  }else{
-    $('#shelterRead').textContent = `No strong terrain advantages found here; prioritize hard cover (basements/interior rooms, culverts, underpasses) and distance cross-wind.`;
-  }
+  $('#shelterRead').textContent = best?(`Best nearby: ${best.lat.toFixed(5)}, ${best.lng.toFixed(5)} — ${best.why.join(', ')}`):('No strong terrain advantage; use hard cover and cross-wind routes.');
 };
 
-/* ========= counties load ========= */
-let counties=null;
-async function loadCounties(){
-  try{ const r=await fetch('counties.json',{cache:'no-store'}); if(r.ok){ counties=await r.json(); return; } }catch{}
-  counties = JSON.parse(document.getElementById('countiesData').textContent);
-}
-loadCounties();
+/* add burst by tap */
+function placeBurstTap(e){ /* handled in map init */ }
 
-/* ========= population heat checkbox ========= */
-$('#popHeat').onchange=()=>{
-  if(!counties){ alert('Counties still loading'); $('#popHeat').checked=false; return; }
-  if($('#popHeat').checked){
-    if(useML){
-      mlmap.addSource('popHeat',{type:'geojson',data:counties});
-      mlmap.addLayer({id:'popHeat',type:'fill',source:'popHeat',
-        paint:{'fill-color':['interpolate',['linear'],['get','pop'],0,'#0f172a',50000,'#475569',300000,'#ef4444'],
-               'fill-opacity':0.25}});
-    }else{
-      popHeatLayer = L.geoJSON(counties,{style:f=>({color:'#444',weight:1,fillColor: (f.properties.pop>300000?'#ef4444':(f.properties.pop>100000?'#f59e0b':'#475569')),fillOpacity:0.25})}).addTo(lmap);
-    }
-  }else{
-    if(useML){ try{ mlmap.removeLayer('popHeat'); mlmap.removeSource('popHeat'); }catch{} }
-    else{ try{ lmap.removeLayer(popHeatLayer);}catch{} popHeatLayer=null; }
-  }
-}
-
-/* ========= calc population ========= */
-async function calcPopulation(){
-  if(!counties){ $('#popRead').textContent='Population: (loading counties…)'; return; }
-  if(effects.length===0){ $('#popRead').textContent='Population in current effects: —'; return; }
-  let union = effects[0].gj;
-  for(let i=1;i<effects.length;i++){ try{ union = turf.union(union, effects[i].gj); }catch{} }
-  let total=0, details=[];
-  counties.features.forEach(c=>{
-    try{
-      const inter = turf.intersect(union, c);
-      if(inter){
-        const frac = turf.area(inter) / turf.area(c);
-        const ppl = Math.round(c.properties.pop * frac);
-        total += ppl;
-        details.push(`${c.properties.name}: ${ppl.toLocaleString()}`);
-      }
-    }catch{}
-  });
-  $('#popRead').textContent = `Population in effects: ${total.toLocaleString()}` + (details.length? ` — ${details.join(' • ')}`:'');
-}
-
-/* ========= map click hook already set in init ========= */
-
-/* ========= helpers ========= */
-function positionHTML(el,ll){
-  const cont=useML?mlmap.getContainer():lmap.getContainer(); const rect=cont.getBoundingClientRect();
-  const pt= useML ? mlmap.project({lng:ll[1],lat:ll[0]}) : lmap.latLngToLayerPoint(L.latLng(ll[0],ll[1]));
-  el.style.left=(rect.left+pt.x)+'px'; el.style.top=(rect.top+pt.y)+'px';
-}
-
-/* ========= end ========= */
+/* load counties right away */
+(async function(){ await loadCounties(); })();
 </script>
 </body>
 </html>
