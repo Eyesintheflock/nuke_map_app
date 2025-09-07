@@ -209,40 +209,54 @@ let counties=null;
 
 function webglOk(){ try{const c=document.createElement('canvas');return !!(window.WebGLRenderingContext&&(c.getContext('webgl')||c.getContext('experimental-webgl')));}catch{return false} }
 
+function getFlag(name){
+  const p = new URLSearchParams(location.search);
+  return p.has(name);
+}
+
+function webglOk(){
+  try {
+    if (getFlag('leaf')) return false; // force Leaflet with ?leaf=1
+    const c = document.createElement('canvas');
+    return !!(window.WebGLRenderingContext && (c.getContext('webgl') || c.getContext('experimental-webgl')));
+  } catch { return false; }
+}
+
 function initMap(){
   const start=[45.85,-123.49];
-  if(webglOk()){
-    useML=true; $('#map').style.display='none';
-    try{
-      mlmap = new maplibregl.Map({
-        container:'mlmap',
-        style:{
-          "version":8,
-          "sources":{
-            "osm":{"type":"raster","tiles":["https://a.tile.openstreetmap.org/{z}/{x}/{y}.png","https://b.tile.openstreetmap.org/{z}/{x}/{y}.png","https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"],"tileSize":256,"attribution":"© OSM"},
-            "sat":{"type":"raster","tiles":["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],"tileSize":256},
-            "grid":{"type":"raster","tiles":["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],"tileSize":256},
-            "terrain-dem":{"type":"raster-dem","tiles":["https://demotiles.maplibre.org/terrain-tiles/{z}/{x}/{y}.png"],"tileSize":256,"attribution":"Terrain © MapLibre demo"}
-          },
-          "layers":[
-            {"id":"baseraster","type":"raster","source":"osm","minzoom":0,"maxzoom":19},
-            {"id":"hillshade","type":"hillshade","source":"terrain-dem","layout":{"visibility":"visible"},"paint":{"hillshade-shadow-color":"#000","hillshade-highlight-color":"#fff","hillshade-exaggeration":0.6}}
-          ],
-          "terrain":{"source":"terrain-dem","exaggeration":1.4}
+
+  if (webglOk()) {
+    useML = true;
+    $('#map').style.display='none';
+
+    // Start WITHOUT terrain; user can toggle it on
+    mlmap = new maplibregl.Map({
+      container:'mlmap',
+      style:{
+        "version":8,
+        "sources":{
+          "osm":{"type":"raster","tiles":["https://a.tile.openstreetmap.org/{z}/{x}/{y}.png","https://b.tile.openstreetmap.org/{z}/{x}/{y}.png","https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"],"tileSize":256,"attribution":"© OSM"},
+          "terrain-dem":{"type":"raster-dem","tiles":["https://demotiles.maplibre.org/terrain-tiles/{z}/{x}/{y}.png"],"tileSize":256,"attribution":"Terrain © MapLibre demo"}
         },
-        center:[start[1],start[0]], zoom:8.6, pitch:40, bearing:0,
-        touchZoomRotate:true, pitchWithRotate:true
-      });
-      mlmap.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-left');
-      mlmap.addControl(new maplibregl.ScaleControl({maxWidth:120,unit:'imperial'}));
-      mlmap.on('click',e=>{ if(addMode){ placeBurst([e.lngLat.lat,e.lngLat.lng]); addMode=false; $('#add').classList.remove('active'); }});
-    }catch(err){ showErr('Map init error: '+err.message); }
-  }else{
-    useML=false; $('#mlmap').style.display='none';
-    lmap=L.map('map').setView(start,9);
-    const base = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(lmap);
-    const shade= L.tileLayer('https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',{opacity:0.5}).addTo(lmap);
-    lmap.on('click',e=>{ if(addMode){ placeBurst([e.latlng.lat,e.latlng.lng]); addMode=false; $('#add').classList.remove('active'); }});
+        "layers":[
+          {"id":"baseraster","type":"raster","source":"osm","minzoom":0,"maxzoom":19},
+          {"id":"hillshade","type":"hillshade","source":"terrain-dem","layout":{"visibility":"none"},"paint":{"hillshade-exaggeration":0.6}}
+        ]
+        // NOTE: no terrain at start; the toggle will call setTerrain()
+      },
+      center:[start[1],start[0]], zoom:8.6, pitch:0
+    });
+
+    mlmap.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-left');
+    mlmap.addControl(new maplibregl.ScaleControl({maxWidth:120,unit:'imperial'}));
+    mlmap.on('click', e => { if(addMode){ placeBurst([e.lngLat.lat,e.lngLat.lng]); addMode=false; $('#add').classList.remove('active'); }});
+  } else {
+    useML = false;
+    $('#mlmap').style.display='none';
+    lmap = L.map('map').setView(start, 9);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19, attribution: '© OSM'}).addTo(lmap);
+    L.tileLayer('https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',{opacity:0.5}).addTo(lmap);
+    lmap.on('click', e => { if(addMode){ placeBurst([e.latlng.lat,e.latlng.lng]); addMode=false; $('#add').classList.remove('active'); }});
   }
 }
 initMap();
