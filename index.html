@@ -39,11 +39,17 @@
     </div>
 
     <div class="grp">
-      <label class="lbl">Wind</label><input id="wind" type="number" min="0" max="359" step="1" value="90" class="num sm"><span class="unit">°</span>
-      <label class="lbl">Speed</label><input id="windSpd" type="number" min="0" max="60" step="1" value="10" class="num sm"><span class="unit">m/s</span>
-      <button id="add" class="btn">Add burst (tap map)</button>
-      <button id="clear" class="btn ghost">Clear</button>
-      <button id="refreshTiles" class="btn ghost">Refresh tiles</button>
+      <label class="lbl">Wind</label>
+<input id="wind" type="number" min="0" max="359" step="1" value="90" class="num sm"><span class="unit">°</span>
+<label class="lbl">Speed</label>
+<input id="windSpd" type="number" min="0" max="60" step="1" value="10" class="num sm"><span class="unit">m/s</span>
+<label class="chk" title="Pull wind from Open-Meteo and keep it fresh">
+  <input id="windLive" type="checkbox"> Live
+</label>
+<button id="windLiveOnce" class="btn ghost" title="Fetch once using GPS (or map center)">Use live now</button>
+<button id="add" class="btn">Add burst (tap map)</button>
+<button id="clear" class="btn ghost">Clear</button>
+<button id="refreshTiles" class="btn ghost">Refresh tiles</button>
     </div>
 
     <div class="grp">
@@ -170,24 +176,31 @@
     </div>
 
     <!-- Wind HUD -->
-    <div id="windHUD">
-      <div id="windHead"><div class="title">Wind / Fallout Timing</div><div id="windRead" class="note">90° (E), 10 m/s</div></div>
-      <div id="windBody">
-        <canvas id="windCompass" width="120" height="120"></canvas>
-        <div>
-          <div class="note">Drag arrow • 0–359°</div>
-          <div id="hudEta" class="eta">ETA to you: —</div>
-          <div id="hudLeave" class="note">Leave-shelter est: —</div>
-        </div>
-      </div>
-      <div id="windFoot">
-        <input id="windNum" type="number" min="0" max="359" step="1" value="90">
-        <input id="windNumSpd" type="number" min="0" max="60" step="1" value="10">
-        <button id="windCenter" class="smallbtn">Reset pos</button>
-        <button id="windHide" class="smallbtn">Hide</button>
-      </div>
-      <div id="windResize" title="Resize"></div>
+<div id="windHUD">
+  <div id="windHead">
+    <div class="title">Wind / Fallout Timing</div>
+    <div id="windRead" class="note">90° (E), 10 m/s</div>
+  </div>
+
+  <div id="windBody">
+    <canvas id="windCompass" width="120" height="120"></canvas>
+    <div>
+      <div class="note">Drag arrow • 0–359°</div>
+      <div id="hudEta" class="eta">ETA to you: —</div>
+      <div id="hudLeave" class="note">Leave-shelter est: —</div>
+      <div id="windSrc" class="note">—</div>
     </div>
+  </div>
+
+  <div id="windFoot">
+    <input id="windNum" type="number" min="0" max="359" step="1" value="90">
+    <input id="windNumSpd" type="number" min="0" max="60" step="1" value="10">
+    <button id="windCenter" class="smallbtn">Reset pos</button>
+    <button id="windHide" class="smallbtn">Hide</button>
+  </div>
+
+  <div id="windResize" title="Resize"></div>
+</div>
 
     <div id="err" class="err"></div>
   </div>
