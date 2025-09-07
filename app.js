@@ -7,7 +7,7 @@ const getCSS = v => getComputedStyle(document.documentElement).getPropertyValue(
 function lsGet(k, def){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; } }
 function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 const showErr = msg => { const e = $('#err'); if(!e) return; e.textContent = msg; e.style.display='block'; setTimeout(()=>e.style.display='none', 4000); };
-
+if ('serviceWorker' in navigator) {navigator.serviceWorker.register('sw.js').catch(console.error);}
 /* ===================== globals ===================== */
 let useML=false, mlmap, lmap, addMode=false;
 let windDeg=lsGet('windDeg',90), windSpd=lsGet('windSpd',10);
