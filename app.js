@@ -1,17 +1,45 @@
-/* ===================== helpers ===================== */
+/* ============ helpers ============ */
 const $ = s => document.querySelector(s);
-const toRad = d => d * Math.PI / 180, toDeg = r => r * 180 / Math.PI;
+const toRad = d => d * Math.PI / 180;
+const toDeg = r => r * 180 / Math.PI;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const bearingToCardinal = b => ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(((b%360)+360)%360/22.5)%16];
-const getCSS = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-function lsGet(k, def){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; } }
-function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+const bearingToCardinal = b => (['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'])[Math.round(((b % 360)+360)%360 / 22.5) % 16];
+const getCSS  = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const lsGet   = (k, def) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; } };
+const lsSet   = (k, v)   => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+const showHint = msg => { const el = document.getElementById('hint'); if (el) el.textContent = msg; };
 const showErr = msg => { const e = $('#err'); if(!e) return; e.textContent = msg; e.style.display='block'; setTimeout(()=>e.style.display='none', 4000); };
-if ('serviceWorker' in navigator) {navigator.serviceWorker.register('sw.js').catch(console.error);}
-/* ===================== globals ===================== */
+
+/* Register service worker (safe no-op if missing) */
+if ('serviceWorker' in navigator) {
+  try { navigator.serviceWorker.register('./sw.js'); } catch {}
+}
+
+/* Throttle utility for smooth drag/HUD sync */
+function throttle(fn, ms = 50) {
+  let last = 0, raf = null, queuedArgs = null;
+  return (...args) => {
+    const now = performance.now();
+    queuedArgs = args;
+    const run = () => { last = now; raf = null; fn(...queuedArgs); queuedArgs = null; };
+    if (now - last >= ms) { if (raf) cancelAnimationFrame(raf); run(); }
+    else if (!raf) { raf = requestAnimationFrame(run); }
+  };
+}
+
+/* ============ main ============ */
 let useML=false, mlmap, lmap, addMode=false;
 let windDeg=lsGet('windDeg',90), windSpd=lsGet('windSpd',10);
 let effects=[], myPos=null, popHeatLayer=null, shelterMarkers=[], lastBurst=null, counties=null;
+
+function updateTopbar(){
+  const degEl=document.getElementById('tb-wind-deg');
+  const spdEl=document.getElementById('tb-wind-speed');
+  if(degEl) degEl.textContent=`${Math.round(windDeg)}°`;
+  if(spdEl) spdEl.textContent=`${windSpd} m/s`;
+  const arrow=document.getElementById('tb-wind-arrow');
+  if(arrow) arrow.style.transform=`rotate(${windDeg}deg)`;
+}
 
 function getFlag(name){ return new URLSearchParams(location.search).has(name); }
 function webglOk(){
@@ -54,7 +82,7 @@ function initMap(){
 
   } else {
     useML=false; $('#mlmap').style.display='none';
-    lmap=L.map('map').setView(start,9);
+    lmap=L.map('map', { renderer: L.canvas() }).setView(start,9);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(lmap);
     L.tileLayer('https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',{opacity:0.5}).addTo(lmap);
 
@@ -273,6 +301,7 @@ function drawCompass(){
   $('#wind').value=Math.round(windDeg); $('#windNum').value=Math.round(windDeg);
   $('#windSpd').value=windSpd; $('#windNumSpd').value=windSpd;
   lsSet('windDeg',windDeg); lsSet('windSpd',windSpd);
+  updateTopbar();
 }
 function compDrag(ev){
   const rect=comp.getBoundingClientRect();
@@ -286,6 +315,16 @@ $('#windNum').addEventListener('input',e=>{ windDeg=+e.target.value; drawCompass
 $('#windSpd').addEventListener('input',e=>{ windSpd=+e.target.value; drawCompass(); updateETAFromLast(); });
 $('#windNumSpd').addEventListener('input',e=>{ windSpd=+e.target.value; drawCompass(); updateETAFromLast(); });
 drawCompass();
+
+const toggleHudBtn = document.getElementById('toggleWindHud');
+if(toggleHudBtn){
+  toggleHudBtn.addEventListener('click', ()=>{
+    const hud = document.getElementById('windHUD');
+    const on = hud.style.display !== 'none';
+    hud.style.display = on ? 'none' : 'block';
+    toggleHudBtn.classList.toggle('active', !on);
+  });
+}
 
 $('#btnGPS')?.addEventListener('click', async ()=>{
   try{
