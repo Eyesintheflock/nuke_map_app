@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Nuke Effects – Birkenfeld/Rainier v3.6 (PWA offline)</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#101114">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+  html,body{height:100%;margin:0;background:#101114;color:#eaeaea;font:14px/1.3 system-ui,Segoe UI,Roboto,Helvetica,Arial}
+  #app{display:flex;flex-direction:column;height:100%}
+  #bar,#bar2,#bar3,#bar4,#bar5,#bar6{padding:8px 10px;background:#101114}
+  #bar input,#bar select,#bar button,#bar2 input,#bar2 select,#bar2 button,
+  #bar3 input,#bar3 button,#bar4 input,#bar4 button,#bar4 select,
+  #bar5 input,#bar5 button,#bar5 select,#bar6 input,#bar6 button{margin:3px 6px 3px 0;padding:6px}
+  #map{position:relative;flex:1;min-height:460px;background:#0f1216}
+  .label{font-size:12px;opacity:.9;margin-right:6px}
+  .hr{display:inline-block;width:1px;height:16px;background:#444;margin:0 8px -3px 2px}
+  .badge{display:inline-block;padding:2px 6px;border-radius:6px;font-size:12px;margin-left:6px}
+  .ok{background:#0b7a0b;color:#fff}.warn{background:#b45309;color:#fff}.danger{background:#b91c1c;color:#fff}
+  .muted{opacity:.8}.sel{outline:3px solid #38bdf8}
+  #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:14px;background:#111a;border:1px solid #333;color:#eee;padding:8px 12px;border-radius:8px;backdrop-filter:blur(6px);z-index:9999;display:none}
+  #legend{position:absolute;right:10px;top:10px;background:#111c;color:#eee;border:1px solid #333;border-radius:8px;font-size:12px;z-index:5000;display:none;transform-origin:top left}
+  #legend .head{cursor:move;padding:6px 8px;border-bottom:1px solid #333;background:#0f1620;border-radius:8px 8px 0 0;font-weight:600}
+  #legend .body{padding:6px 8px}
+  .swatch{display:inline-block;width:10px;height:10px;margin-right:6px;border-radius:2px}
+  .divlbl{background:#111c;border:1px solid #333;color:#eee;padding:2px 6px;border-radius:6px;font-size:12px;white-space:nowrap}
+  .mapBtn{position:absolute;z-index:5001;background:#0f1620;border:1px solid #333;color:#eaeaea;border-radius:8px;padding:6px 10px;font-size:12px}
+  #legendBtn{left:10px;top:10px}
+  #tilesBtn{right:10px;top:10px}
+  #refreshTiles{right:10px;top:46px}
+  #offlineToggle{right:10px;top:82px}
+  #tileStatus{position:absolute;right:10px;top:118px;z-index:5001;background:#0b0e12;border:1px solid #333;color:#9ca3af;border-radius:6px;padding:4px 8px;font-size:11px}
+  #north{position:absolute;left:10px;bottom:14px;z-index:5001;font-size:12px;color:#9ca3af;opacity:.9;background:#0b0e12;border:1px solid #333;border-radius:6px;padding:4px 8px}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- 1) Burst/weather -->
+  <div id="bar">
+    <span class="label">Burst preset:</span>
+    <select id="preset">
+      <option value="custom">Custom</option>
+      <option value="15">Little Boy (15 kt)</option>
+      <option value="100" selected>W76 (100 kt)</option>
+      <option value="475">W88 (475 kt)</option>
+      <option value="1200">B83 (1.2 Mt)</option>
+      <option value="2000">2 Mt</option><option value="5000">5 Mt</option>
+      <option value="10000">10 Mt</option><option value="25000">25 Mt</option>
+      <option value="50000">Tsar Bomba (50 Mt)</option><option value="100000">Theoretical 100 Mt</option>
+    </select>
+    <span class="label">Yield kt</span><input id="yield" type="number" min="0.1" step="0.1" value="100"/>
+    <span class="label">Altitude m</span><input id="alt" type="number" min="0" step="10" value="0"/>
+    <button id="opt5">Opt 5 psi</button><button id="opt1">Opt 1 psi</button>
+    <span class="hr"></span>
+    <span class="label">WX</span>
+    <select id="precip"><option value="dry" selected>Dry</option><option value="lightrain">Light rain</option><option value="heavyrain">Heavy rain</option><option value="snow">Snow</option></select>
+    <span class="label">Wind →°</span><input id="wdir" type="number" min="0" max="360" value="90"/>
+    <span class="label">m/s</span><input id="wspd" type="number" min="0.1" step="0.1" value="10"/>
+    <label style="margin-left:8px"><input id="fallout" type="checkbox" checked/> Fallout</label>
+    <button id="add" style="margin-left:8px">Add burst (tap map)</button><button id="clear">Clear bursts</button>
+  </div>
+
+  <!-- 2) Time/commute/basemap/export + Legend controls -->
+  <div id="bar2">
+    <span class="label">Since burst</span><input id="t" type="range" min="0" max="72" step="1" value="1"/><span id="tlabel" class="badge">1 h</span>
+    <span id="decay" class="badge ok">~0.54× dose vs 1h</span>
+    <span class="hr"></span>
+    <span class="label">Avg drive mph</span><input id="mph" type="number" min="5" max="70" value="40"/>
+    <button id="commute">Commute Safety (Work→Home)</button><span id="commuteResult" class="badge">—</span>
+    <span class="hr"></span>
+    <label><input id="popOn" type="checkbox"/> Population heat</label>
+    <span class="label">Opacity</span><input id="popAlpha" type="range" min="0" max="1" step="0.05" value="0.55" style="width:120px"/>
+    <span class="hr"></span>
+    <span class="label">Basemap</span>
+    <select id="baseSel">
+      <option value="auto" selected>Auto (fallback)</option>
+      <option value="osm">OSM Streets</option>
+      <option value="sat">Esri Satellite</option>
+      <option value="hill">Esri Hillshade</option>
+      <option value="carto">Carto Light</option>
+      <option value="opentopo">OpenTopo</option>
+      <option value="offline">OFFLINE grid</option>
+    </select>
+    <span class="hr"></span>
+    <button id="share">Copy link</button><button id="csv">CSV</button><button id="snapshot">PNG</button><button id="print">Print</button>
+    <span class="hr"></span>
+    <label><input id="legendToggle" type="checkbox" checked/> Legend</label>
+    <span class="label">Legend size</span><input id="legendScale" type="range" min="0.8" max="1.6" step="0.05" value="1.0" style="width:120px"/>
+  </div>
+
+  <!-- 3) Home/Work -->
+  <div id="bar3">
+    <span class="label">Home</span><span id="homeLbl" class="muted">—</span>
+    <button id="homeCenter">Home = Center</button><button id="homeGPS">Home = GPS</button><button id="toHome">Go Home</button>
+    <span class="hr"></span>
+    <span class="label">Work</span><span id="workLbl" class="muted">—</span>
+    <button id="workCenter">Work = Center</button><button id="workGPS">Work = GPS</button><button id="toWork">Go Work</button>
+    <span class="hr"></span><label><input id="lockPins" type="checkbox"/> Lock pins</label>
+    <button id="savePins">Save pins</button><button id="resetPins">Reset defaults</button>
+  </div>
+
+  <!-- 4) Search + selected-burst editor -->
+  <div id="bar4">
+    <span class="label">Search</span><input id="q" type="text" placeholder="address/place"/>
+    <button id="find">Go</button><button id="centerToSearch">Center on result</button>
+    <button id="homeFromCenter">Home = Center</button><button id="workFromCenter">Work = Center</button>
+    <button id="burstFromCenter">Move Selected Burst = Center</button>
+  </div>
+
+  <!-- 5) Selected burst editor -->
+  <div id="bar5">
+    <span class="label">Selected burst</span>
+    <select id="burstSel"><option value="">(none)</option></select>
+    <span class="label">Yield</span><input id="bY" type="number" min="0.1" step="0.1" style="width:90px"/>
+    <span class="label">Alt m</span><input id="bA" type="number" step="10" style="width:90px"/>
+    <span class="label">Wind°</span><input id="bD" type="number" min="0" max="360" style="width:80px"/>
+    <span class="label">m/s</span><input id="bS" type="number" min="0.1" step="0.1" style="width:80px"/>
+    <span class="label">WX</span>
+    <select id="bP" style="width:110px"><option value="dry">Dry</option><option value="lightrain">Light rain</option><option value="heavyrain">Heavy rain</option><option value="snow">Snow</option></select>
+    <button id="applyBurst">Apply</button><button id="delBurst">Delete</button>
+  </div>
+
+  <!-- 6) Summary -->
+  <div id="bar6">
+    <strong>Selected burst effects & population:</strong>
+    <div id="burstSummary" class="muted">Select or add a burst.</div>
+  </div>
+
+  <div id="map">
+    <button id="legendBtn" class="mapBtn">Legend</button>
+    <button id="tilesBtn" class="mapBtn">Tiles</button>
+    <button id="refreshTiles" class="mapBtn">Refresh tiles</button>
+    <button id="offlineToggle" class="mapBtn">Offline grid</button>
+    <div id="tileStatus">Tiles: —</div>
+    <div id="legend">
+      <div class="head">Legend</div>
+      <div class="body">
+        <div><span class="swatch" style="background:#9333ea"></span>20 psi (severe structural collapse)</div>
+        <div><span class="swatch" style="background:#10b981"></span>5 psi (heavy damage; most houses)</div>
+        <div><span class="swatch" style="background:#3b82f6"></span>1 psi (window failure, light damage)</div>
+        <div><span class="swatch" style="background:#ef4444"></span>Thermal 3rd° (unprotected burns)</div>
+      </div>
+    </div>
+    <div id="north">N ↑</div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+<script>
+// --- Service Worker registration (requires https or localhost) ---
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(err => console.log('SW reg failed', err));
+  });
+}
+
+// Helpers
+const vibrate = ms => { try{ navigator.vibrate && navigator.vibrate(ms||12);}catch{} };
+const toastEl = document.getElementById('toast');
+function toast(msg,ms=1400){ toastEl.textContent=msg; toastEl.style.display='block'; setTimeout(()=>toastEl.style.display='none', ms); }
+const d2r=d=>d*Math.PI/180, r2d=r=>r*180/Math.PI, R=6371000;
+function dest(lat,lng,dist,bear){ const d=dist/R, th=d2r(bear), p1=d2r(lat), l1=d2r(lng);
+  const sp1=Math.sin(p1), cp1=Math.cos(p1), sd=Math.sin(d), cd=Math.cos(d), sth=Math.sin(th), cth=Math.cos(th);
+  const sp2 = sp1*cd + cp1*sd*cth, p2 = Math.asin(sp2); const y = sth*sd*cp1, x = cd - sp1*sp2; const l2 = l1 + Math.atan2(y,x);
+  return { lat:r2d(p2), lng:r2d(l2) }; }
+function havKm(a,b){ const dLat=d2r(b.lat-a.lat), dLng=d2r(b.lng-a.lng);
+  const s2 = Math.sin(dLat/2)**2 + Math.cos(d2r(a.lat))*Math.cos(d2r(b.lat))*Math.sin(dLng/2)**2; return 2*R*Math.asin(Math.sqrt(s2))/1000; }
+function angDiff(a,b){ let d=Math.abs(a-b)%360; return d>180?360-d:d; }
+function fmtKM(m){ return m>=1000 ? (m/1000).toFixed(2)+' km' : Math.round(m)+' m'; }
+function saveLS(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} }
+function loadLS(k,def){ try{ const s=localStorage.getItem(k); return s?JSON.parse(s):def; }catch{ return def; } }
+const $=id=>document.getElementById(id);
+
+// Offline grid layer (canvas)
+const OfflineGrid = L.GridLayer.extend({
+  createTile: function(coords){
+    const tile = L.DomUtil.create('canvas',''); const size = this.getTileSize(); tile.width=size.x; tile.height=size.y;
+    const ctx = tile.getContext('2d');
+    ctx.fillStyle = '#0e1116'; ctx.fillRect(0,0,size.x,size.y);
+    const zoom = coords.z; const step = zoom<=9 ? 0.5 : 0.25;
+    const bounds = this._tileCoordsToBounds(coords);
+    const minLat=bounds.getSouth(), maxLat=bounds.getNorth(), minLng=bounds.getWest(), maxLng=bounds.getEast();
+    ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 1;
+    for(let lon=Math.ceil(minLng/step)*step; lon<maxLng; lon+=step){
+      const x = (lon - minLng)/(maxLng - minLng)*size.x; ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,size.y); ctx.stroke();
+    }
+    for(let lat=Math.ceil(minLat/step)*step; lat<maxLat; lat+=step){
+      const y = (maxLat - lat)/(maxLat - minLat)*size.y; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(size.x,y); ctx.stroke();
+    }
+    return tile;
+  }
+});
+function offlineGrid(){ return new OfflineGrid({opacity:1}); }
+
+// Basemaps + fallback + offline
+const baseDefs = {
+  osm:     ()=>L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OSM'}),
+  sat:     ()=>L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {attribution:'Tiles © Esri'}),
+  hill:    ()=>L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}', {attribution:'Hillshade © Esri'}),
+  carto:   ()=>L.tileLayer('https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png', {attribution:'©OpenStreetMap ©Carto', subdomains:'abcd'}),
+  opentopo:()=>L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{attribution:'©OpenTopoMap', subdomains:'abc'}),
+  offline: ()=>offlineGrid()
+};
+const fallbackOrder = ['sat','osm','hill','carto','opentopo'];
+let currentBaseKey = 'auto';
+const map = L.map('map',{ zoomControl:true, zoomSnap:0.5 }).setView([45.77,-123.43], 9);
+let activeBase = null;
+const tileStatus = $('tileStatus');
+
+function attachTileWatch(layer, name, onFirstGood){
+  let gotTile=false, errs=0;
+  const ok = ()=>{ if(!gotTile){ gotTile=true; tileStatus.textContent = 'Tiles: '+name; onFirstGood&&onFirstGood(); } };
+  layer.on && layer.on('tileload', ok);
+  layer.on && layer.on('load', ok);
+  layer.on && layer.on('tileerror', ()=>{ errs++; if(errs>4) tileStatus.textContent = 'Tiles failing: '+name; });
+  setTimeout(()=>{ if(!gotTile){ tileStatus.textContent='No tiles from '+name; }}, 2500);
+}
+function setBase(key){
+  if(activeBase){ map.removeLayer(activeBase); activeBase=null; }
+  currentBaseKey = key;
+  if(key==='auto'){ tryAutoBase(); return; }
+  const m = baseDefs[key](); activeBase = m.addTo(map); tileStatus.textContent='Tiles: '+key;
+}
+function tryAutoBase(i=0){
+  if(i>=fallbackOrder.length){ setBase('offline'); toast('All providers failed. Using offline grid.'); return; }
+  if(activeBase){ map.removeLayer(activeBase); activeBase=null; }
+  const key=fallbackOrder[i]; const candidate = baseDefs[key]();
+  attachTileWatch(candidate, key, ()=>{ activeBase=candidate; });
+  candidate.addTo(map);
+  setTimeout(()=>{ const txt=tileStatus.textContent||''; if(!/Tiles:\s/.test(txt)){ tryAutoBase(i+1); } }, 3500);
+}
+L.control.scale({position:'bottomleft'}).addTo(map);
+tryAutoBase();
+setTimeout(()=>map.invalidateSize(), 400);
+
+// Map UI buttons
+$('tilesBtn').onclick = ()=>{
+  const next = currentBaseKey==='auto' ? 'osm'
+        : currentBaseKey==='osm' ? 'sat'
+        : currentBaseKey==='sat' ? 'hill'
+        : currentBaseKey==='hill' ? 'carto'
+        : currentBaseKey==='carto' ? 'opentopo'
+        : 'offline';
+  setBase(next);
+};
+$('refreshTiles').onclick = ()=>{
+  if(activeBase && activeBase.redraw){ activeBase.redraw(); }
+  tileStatus.textContent='Refreshing tiles…'; setTimeout(()=>map.invalidateSize(), 150);
+  if(currentBaseKey==='auto') tryAutoBase();
+};
+$('offlineToggle').onclick=()=> setBase('offline');
+
+// Physics & scaling
+const BASE_1MT={fireball_m:1200,over20psi_m:3200,over5psi_m:7400,over1psi_m:20900,thermal_3rd_m:13000,thermal_2nd_m:20000};
+function scaleByYield(kt){ const Y=Math.max(0.001,kt/1000), y13=Math.cbrt(Y), y04=Math.pow(Y,0.4), y041=Math.pow(Y,0.41);
+  return { fireball_m:BASE_1MT.fireball_m*y04, over20psi_m:BASE_1MT.over20psi_m*y13, over5psi_m:BASE_1MT.over5psi_m*y13,
+           over1psi_m:BASE_1MT.over1psi_m*y13, thermal_3rd_m:BASE_1MT.thermal_3rd_m*y041, thermal_2nd_m:BASE_1MT.thermal_2nd_m*y041 }; }
+function altitudeAtten(m){ const H=10000; return Math.exp(-Math.max(0,m)/H); }
+function hob(kt,psi){ const y13=Math.cbrt(Math.max(0.001,kt/1000)); return Math.round((psi===5?3000:5000)*y13); }
+function weatherFactors(mode){ if(mode==='lightrain') return {L:0.75,W:0.9,O:1.1}; if(mode==='heavyrain') return {L:0.50,W:0.8,O:1.2}; if(mode==='snow') return {L:0.60,W:0.85,O:1.15}; return {L:1,W:1,O:1}; }
+function doseFactor(h){ if(h<=1) return 1; return Math.pow(h, -1.2); }
+function falloutParams(kt,dir,spd,alt,precip){
+  const ground = alt<=200 ? 1 : alt<=2000 ? 0.3 : 0;
+  const wf=weatherFactors(precip);
+  const ws=Math.max(0.1, spd);
+  const yF=Math.sqrt(Math.max(1,kt/100));
+  const length = 20000*yF*ground*(10/ws)*wf.L;
+  const halfdeg = (10+10*ground)*wf.W;
+  return {ground, halfdeg, length};
+}
+function falloutPolygon(lat,lng,kt,dir,spd,alt,terrain,precip,hour){
+  const p=falloutParams(kt,dir,spd,alt,precip);
+  if(p.ground===0) return {poly:[],opacity:0};
+  const decayL=Math.max(0.35, Math.pow(Math.max(1,hour), -0.25));
+  let length = p.length*decayL;
+  const steps=28, center=[], left=[], right=[];
+  for(let i=1;i<=steps;i++){ const d=(i/steps)*length; center.push(dest(lat,lng,d,dir)); }
+  for(let i=0;i<center.length;i++){ const pC=center[i], frac=(i+1)/steps, width=(frac*length)/6;
+    left.push(dest(pC.lat,pC.lng,width, dir - p.halfdeg)); right.push(dest(pC.lat,pC.lng,width, dir + p.halfdeg)); }
+  return { poly:[{lat,lng}, ...right, center[center.length-1], ...left.reverse()], opacity:0.18*Math.min(1, 0.5+0.5*doseFactor(hour)) };
+}
+function doseRate_mSvph(kt, alt, precip, r_m, hour){
+  const {ground}=falloutParams(kt,0,10,alt,precip); if(ground===0) return 0;
+  const precipK = precip==='heavyrain'?1.8 : precip==='lightrain'?1.3 : precip==='snow'?1.5 : 1.0;
+  const rkm = Math.max(0.5, r_m/1000);
+  const idx = (kt * ground * precipK) / (rkm*rkm);
+  let d1h;
+  if(idx>800) d1h=4000; else if(idx>300) d1h=1000; else if(idx>120) d1h=300;
+  else if(idx>40) d1h=80; else if(idx>10) d1h=20; else d1h=5;
+  return d1h * Math.pow(Math.max(1,hour), -1.2);
+}
+
+// Population (coarse)
+const POP_POINTS=[
+  [45.5152,-122.6784,650],[45.5229,-122.9898,110],[45.4860,-122.8037,100],[45.3334,-122.7690,80],
+  [44.0521,-123.0868,175],[44.9429,-123.0351,175],[45.5898,-122.5951,90],[45.6387,-122.6615,175],
+  [46.1879,-123.8313,40],[46.1382,-122.9382,40],[45.8580,-123.1930,8],[45.8450,-123.4990,5],
+  [47.6062,-122.3321,740],[47.2529,-122.4443,225],[47.6730,-122.1215,180],[47.0379,-122.9007,100]
+];
+let popLayer=null, popOpacity=0.55;
+function popPointsScaled(){ return POP_POINTS.map(p=>[p[0],p[1], Math.sqrt(p[2])]); }
+function estimatePopInRing(center, rInnerM, rOuterM){
+  let k=0; for(const p of POP_POINTS){ const d = havKm(center, {lat:p[0],lng:p[1]})*1000; if(d>rInnerM && d<=rOuterM) k += p[2]; }
+  return Math.round(k*1000);
+}
+
+// Pins
+let HOME = loadLS('homePin',{lat:45.845,lng:-123.499});
+let WORK = loadLS('workPin',{lat:46.089,lng:-122.939});
+const homeM = L.marker([HOME.lat,HOME.lng], {draggable:true}).addTo(map).bindTooltip('Home');
+const workM = L.marker([WORK.lat,WORK.lng], {draggable:true}).addTo(map).bindTooltip('Work');
+function updPinLabels(){ $('homeLbl').textContent=`${HOME.lat.toFixed(5)}, ${HOME.lng.toFixed(5)}`; $('workLbl').textContent=`${WORK.lat.toFixed(5)}, ${WORK.lng.toFixed(5)}`; }
+updPinLabels();
+homeM.on('dragend', e=>{ const p=e.target.getLatLng(); HOME={lat:p.lat,lng:p.lng}; updPinLabels(); render(); saveLS('homePin',HOME); });
+workM.on('dragend', e=>{ const p=e.target.getLatLng(); WORK={lat:p.lat,lng:p.lng}; updPinLabels(); render(); saveLS('workPin',WORK); });
+
+// Bursts
+const bursts=[]; let selectedId="", adding=false, hourSince=1;
+let current={ kt:100, alt:0, dir:90, spd:10, precip:'dry' };
+const EFFECT_TEXT={
+  psi20:'Reinforced concrete failure; near-total collapse; unsurvivable without deep shelter.',
+  psi5:'Heavy damage to homes/trees; most roofs off; severe injuries.',
+  psi1:'Windows shatter; light structural damage; injuries from glass/debris.',
+  therm3:'3rd-degree burns for exposed skin; ignitions likely.'
+};
+function divLabel(text){ return L.divIcon({className:'', html:`<div class="divlbl">${text}</div>`}); }
+function newRingsWithLabels(){
+  const g = {
+    psi1:L.circle([0,0],{radius:1,color:'#3b82f6',weight:1,fillOpacity:.08}),
+    therm2:L.circle([0,0],{radius:1,color:'#f59e0b',weight:1,dashArray:'4 6',fillOpacity:.05}),
+    psi5:L.circle([0,0],{radius:1,color:'#10b981',weight:1,fillOpacity:.10}),
+    therm3:L.circle([0,0],{radius:1,color:'#ef4444',weight:1,dashArray:'2 6',fillOpacity:.06}),
+    psi20:L.circle([0,0],{radius:1,color:'#9333ea',weight:1,fillOpacity:.12}),
+    fire:L.circle([0,0],{radius:1,color:'#000',weight:1,fillOpacity:.15}),
+    lbls:{
+      psi20:L.marker([0,0],{icon:divLabel('20 psi'), interactive:false}),
+      psi5:L.marker([0,0],{icon:divLabel('5 psi'), interactive:false}),
+      psi1:L.marker([0,0],{icon:divLabel('1 psi'), interactive:false}),
+      therm3:L.marker([0,0],{icon:divLabel('Thermal 3rd°'), interactive:false}),
+    }
+  };
+  [g.psi1,g.therm2,g.psi5,g.therm3,g.psi20,g.fire,g.lbls.psi20,g.lbls.psi5,g.lbls.psi1,g.lbls.therm3].forEach(l=>l.addTo(map));
+  return g;
+}
+function newBurstMarker(b){
+  const marker=L.marker([b.lat,b.lng], {draggable:true}).addTo(map).bindTooltip('Burst');
+  marker.on('dragend', e=>{ const p=e.target.getLatLng(); b.lat=p.lat; b.lng=p.lng; render(); });
+  marker.on('click', ()=>{ selectBurst(b.id); });
+  return marker;
+}
+function addBurstAt(lat,lng){
+  const id='b'+Date.now()+Math.floor(Math.random()*9999);
+  const rings=newRingsWithLabels();
+  const plume=L.polygon([], {color:'#666',weight:1,fillOpacity:.2}).addTo(map);
+  const b={ id, lat,lng, kt:current.kt, alt:current.alt, dir:current.dir, spd:current.spd, precip:current.precip,
+            marker:null, rings, plume };
+  b.marker=newBurstMarker(b); bursts.push(b); refreshBurstSelect(); selectBurst(id); render(); toast('Burst added');
+  makeRingsClickable(b);
+}
+function selectBurst(id){
+  selectedId=id; const b=bursts.find(x=>x.id===id); if(!b) return;
+  $('burstSel').value=b.id; $('bY').value=b.kt; $('bA').value=b.alt; $('bD').value=b.dir; $('bS').value=b.spd; $('bP').value=b.precip;
+  updateSelectedSummary(b); render();
+}
+function deleteSelected(){
+  if(!selectedId) return; const i=bursts.findIndex(x=>x.id===selectedId); if(i<0) return;
+  const b=bursts[i]; b.marker.remove(); Object.values(b.rings).forEach(x=>{ if(x?.remove) x.remove(); if(x?.lbls){ Object.values(x.lbls).forEach(m=>m.remove()); }}); b.plume.remove();
+  bursts.splice(i,1); selectedId=""; refreshBurstSelect(); $('burstSummary').textContent='Select or add a burst.'; render(); toast('Burst deleted');
+}
+function refreshBurstSelect(){
+  const sel=$('burstSel'); const keep=sel.value;
+  sel.innerHTML='<option value="">(none)</option>'+bursts.map(b=>`<option value="${b.id}">${b.id} @ ${b.lat.toFixed(3)},${b.lng.toFixed(3)}</option>`).join('');
+  if(keep) sel.value=keep;
+}
+
+// Clickable ring popups (casualty/dose bands)
+const DAMAGE_DESC={
+  psi20:'Reinforced concrete frames fail; near-total building collapse. Survival requires deep shelter.',
+  psi5:'Most residential structures heavily damaged; airborne debris; severe injuries common.',
+  psi1:'Glass failure and light structural damage; injuries mainly from debris and fire.',
+  thermal:'Unprotected 3rd-degree burns; ignition of flammables likely.'
+};
+const CASUALTY_RATES={
+  psi20:{fatal:[0.85,0.99], inj:[0.01,0.1]},
+  psi5:{fatal:[0.30,0.70], inj:[0.40,0.90]},
+  psi1:{fatal:[0.00,0.05], inj:[0.10,0.25]},
+  thermal:{fatal:[0.05,0.30], inj:[0.20,0.60]}
+};
+function band(n, r){ const [a,b]=r; const lo=Math.round(n*a), hi=Math.round(n*b); return `~${lo.toLocaleString()}–${hi.toLocaleString()}`; }
+function makeRingsClickable(b){
+  const rings=[['psi20','20 psi',()=>scaleByYield(b.kt).over20psi_m*altitudeAtten(b.alt)],
+               ['psi5','5 psi', ()=>scaleByYield(b.kt).over5psi_m*altitudeAtten(b.alt)],
+               ['psi1','1 psi',  ()=>scaleByYield(b.kt).over1psi_m*altitudeAtten(b.alt)],
+               ['thermal','Thermal 3rd°', ()=>scaleByYield(b.kt).thermal_3rd_m*altitudeAtten(b.alt)]];
+  rings.forEach(([key,label,rf])=>{
+    const layer = key==='psi20'? b.rings.psi20 : key==='psi5'? b.rings.psi5 : key==='psi1'? b.rings.psi1 : b.rings.therm3;
+    layer.on('click', e=>{
+      const center={lat:b.lat,lng:b.lng};
+      const r=rf();
+      const r0 = key==='psi20'?0 : key==='psi5'? scaleByYield(b.kt).over20psi_m*altitudeAtten(b.alt)
+                : key==='psi1'? scaleByYield(b.kt).over5psi_m*altitudeAtten(b.alt)
+                : scaleByYield(b.kt).over1psi_m*altitudeAtten(b.alt);
+      const pop = estimatePopInRing(center, r0, r);
+      const {ground,halfdeg}=falloutParams(b.kt,b.dir,b.spd,b.alt,b.precip);
+      const sector = ground? `If you are inside the plume (~±${Math.round(halfdeg)}° around ${Math.round(b.dir)}°):` : `Air burst (minimal fallout):`;
+      const midR = (r+r0)/2;
+      const dose = ground? doseRate_mSvph(b.kt,b.alt,b.precip, midR, hourSince) : 0;
+      const doseBand = !ground ? '—' :
+         dose>=1000? `~${Math.round(dose)} mSv/h (lethal in hours)` :
+         dose>=200 ? `~${Math.round(dose)} mSv/h (dangerous)` :
+         dose>=20  ? `~${Math.round(dose)} mSv/h (high)` :
+         dose>=2   ? `~${dose.toFixed(1)} mSv/h (elevated)` : `~${dose.toFixed(1)} mSv/h (low)`;
+      const cr = CASUALTY_RATES[key]; const fat = band(pop, cr.fatal), inj = band(pop, cr.inj);
+      const html = `
+        <div style="min-width:240px">
+          <b>${label} ring</b><br/>
+          Radius: <b>${fmtKM(r)}</b> (inner: ${fmtKM(r0)})<br/>
+          Damage: ${DAMAGE_DESC[key] || EFFECT_TEXT.therm3}<br/>
+          <hr style="border-color:#333"/>
+          Est. population in this ring: <b>${pop.toLocaleString()}</b><br/>
+          Rough casualties: <b>fatalities ${fat}</b>; <b>injuries ${inj}</b><br/>
+          <hr style="border-color:#333"/>
+          ${sector}<br/>
+          <b>Centerline dose @ ${hourSince} h:</b> ${doseBand}<br/>
+          <span class="mini">Planning estimate only. Dose falls fast cross-wind; outside plume expect far lower.</span>
+        </div>`;
+      L.popup({autoPan:true, maxWidth:320}).setLatLng(e.latlng).setContent(html).openOn(map);
+    });
+  });
+}
+
+// Legend controls (persist)
+const legend = $('legend'), legendBtn = $('legendBtn'), legendToggle = $('legendToggle'), legendScale = $('legendScale');
+(function initLegendUI(){
+  const st = loadLS('legendState', {show:true, scale:1, x:null, y:null});
+  legendToggle.checked = !!st.show;
+  legend.style.display = st.show ? 'block' : 'none';
+  legend.style.transform = `scale(${st.scale||1})`;
+  legendScale.value = st.scale||1;
+  if(st.x!=null && st.y!=null){ legend.style.left = st.x+'px'; legend.style.top = st.y+'px'; legend.style.right=''; }
+})();
+legendToggle.onchange = ()=>{ const show=legendToggle.checked; legend.style.display = show?'block':'none'; saveLS('legendState', {...loadLS('legendState',{}), show}); };
+legendBtn.onclick = ()=>{ legendToggle.checked = !legendToggle.checked; legendToggle.onchange(); };
+legendScale.oninput = ()=>{ const sc = +legendScale.value; legend.style.transform=`scale(${sc})`; saveLS('legendState', {...loadLS('legendState',{}), scale:sc}); };
+(function makeLegendDraggable(){
+  let dragging=false, sx=0, sy=0, ox=0, oy=0;
+  legend.querySelector('.head').addEventListener('pointerdown', e=>{
+    dragging=true; sx=e.clientX; sy=e.clientY;
+    const rect=legend.getBoundingClientRect(); ox=rect.left; oy=rect.top; legend.setPointerCapture(e.pointerId);
+  });
+  window.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    const dx=e.clientX-sx, dy=e.clientY-sy;
+    const mapRect = document.getElementById('map').getBoundingClientRect();
+    let x = ox+dx - mapRect.left; let y = oy+dy - mapRect.top;
+    x = Math.max(4, Math.min(x, mapRect.width-120)); y = Math.max(4, Math.min(y, mapRect.height-60));
+    legend.style.left = x+'px'; legend.style.top = y+'px'; legend.style.right='';
+  });
+  window.addEventListener('pointerup', ()=>{
+    if(!dragging) return; dragging=false;
+    const mapRect = document.getElementById('map').getBoundingClientRect();
+    const rect=legend.getBoundingClientRect();
+    saveLS('legendState', {...loadLS('legendState',{}), x:rect.left-mapRect.left, y:rect.top-mapRect.top});
+  });
+})();
+
+// Wiring
+$('preset').onchange=e=>{ const v=e.target.value; if(v!=='custom'){ current.kt=+v; $('yield').value=v; render(); } };
+$('yield').oninput=e=>{ current.kt=+e.target.value; render(); };
+$('alt').oninput=e=>{ current.alt=+e.target.value; render(); };
+$('wdir').oninput=e=>{ current.dir=+e.target.value; render(); };
+$('wspd').oninput=e=>{ current.spd=+e.target.value; render(); };
+$('precip').onchange=e=>{ current.precip=e.target.value; render(); };
+$('fallout').onchange=()=>render();
+$('opt5').onclick=()=>{ $('alt').value=current.alt=hob(current.kt,5); render(); };
+$('opt1').onclick=()=>{ $('alt').value=current.alt=hob(current.kt,1); render(); };
+$('add').onclick=()=>{ adding=true; toast('Tap map to place burst'); };
+$('clear').onclick=()=>{ bursts.slice().forEach(b=>{ b.marker.remove(); Object.values(b.rings).forEach(x=>{ if(x?.remove) x.remove(); if(x?.lbls){ Object.values(x.lbls).forEach(m=>m.remove()); }}); b.plume.remove(); }); bursts.length=0; selectedId=""; refreshBurstSelect(); $('burstSummary').textContent='Select or add a burst.'; render(); toast('Cleared'); };
+$('t').oninput=e=>{ hourSince=+e.target.value; render(); };
+
+$('homeCenter').onclick=()=>{ const c=map.getCenter(); HOME=c; homeM.setLatLng(c); saveLS('homePin',HOME); updPinLabels(); render(); toast('Home set'); };
+$('workCenter').onclick=()=>{ const c=map.getCenter(); WORK=c; workM.setLatLng(c); saveLS('workPin',WORK); updPinLabels(); render(); toast('Work set'); };
+$('homeGPS').onclick=()=>navigator.geolocation?.getCurrentPosition(p=>{ HOME={lat:p.coords.latitude,lng:p.coords.longitude}; homeM.setLatLng(HOME); saveLS('homePin',HOME); updPinLabels(); render(); toast('Home = GPS'); },()=>toast('GPS denied'));
+$('workGPS').onclick=()=>navigator.geolocation?.getCurrentPosition(p=>{ WORK={lat:p.coords.latitude,lng:p.coords.longitude}; workM.setLatLng(WORK); saveLS('workPin',WORK); updPinLabels(); render(); toast('Work = GPS'); },()=>toast('GPS denied'));
+$('toHome').onclick=()=>map.setView([HOME.lat,HOME.lng], Math.max(12,map.getZoom()));
+$('toWork').onclick=()=>map.setView([WORK.lat,WORK.lng], Math.max(12,map.getZoom()));
+$('savePins').onclick=()=>{ saveLS('homePin',HOME); saveLS('workPin',WORK); toast('Pins saved'); };
+$('resetPins').onclick=()=>{ HOME={lat:45.845,lng:-123.499}; WORK={lat:46.089,lng:-122.939}; homeM.setLatLng(HOME); workM.setLatLng(WORK); saveLS('homePin',HOME); saveLS('workPin',WORK); updPinLabels(); render(); toast('Pins reset'); };
+
+async function geocode(q){
+  const url=`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}`;
+  const r=await fetch(url,{headers:{'Accept-Language':'en'}}); const j=await r.json();
+  if(!j || !j.length) throw new Error('No results'); return {lat:+j[0].lat, lng:+j[0].lon, label:j[0].display_name};
+}
+$('find').onclick=async()=>{ const q=$('q').value.trim(); if(!q) return; try{ const r=await geocode(q); map.setView([r.lat,r.lng], Math.max(14,map.getZoom())); toast('Found'); }catch{ toast('No results'); } };
+$('centerToSearch').onclick=$('find').onclick;
+$('homeFromCenter').onclick=()=>{ const c=map.getCenter(); HOME=c; homeM.setLatLng(c); saveLS('homePin',HOME); updPinLabels(); render(); toast('Home set'); };
+$('workFromCenter').onclick=()=>{ const c=map.getCenter(); WORK=c; workM.setLatLng(WORK); saveLS('workPin',WORK); updPinLabels(); render(); toast('Work set'); };
+$('burstFromCenter').onclick=()=>{ if(!selectedId) return toast('Select a burst'); const c=map.getCenter(); const b=bursts.find(x=>x.id===selectedId); if(!b) return; b.lat=c.lat; b.lng=c.lng; b.marker.setLatLng(c); render(); toast('Burst moved'); };
+
+$('baseSel').onchange=e=>{ const v=e.target.value; setBase(v); };
+
+// Summary & render
+function updateSelectedSummary(b){
+  if(!b){ $('burstSummary').textContent='Select or add a burst.'; return; }
+  const sc=scaleByYield(b.kt), att=altitudeAtten(b.alt);
+  const r20=sc.over20psi_m*att, r5=sc.over5psi_m*att, r1=sc.over1psi_m*att, rT=sc.thermal_3rd_m*att;
+  const c={lat:b.lat,lng:b.lng};
+  const pop20 = estimatePopInRing(c, 0, r20);
+  const pop5  = estimatePopInRing(c, r20, r5);
+  const pop1  = estimatePopInRing(c, r5, r1);
+  const popTh = estimatePopInRing(c, r1, rT);
+  const fmtPop = n => n>=1000 ? (n/1000).toFixed(1)+'k' : n.toString();
+  $('burstSummary').innerHTML = `
+    <div class="r"><span><b>20 psi</b> – ${EFFECT_TEXT.psi20}</span><span>${fmtKM(r20)} | ~${fmtPop(pop20)} ppl</span></div>
+    <div class="r"><span><b>5 psi</b> – ${EFFECT_TEXT.psi5}</span><span>${fmtKM(r5)} | ~${fmtPop(pop5)} ppl</span></div>
+    <div class="r"><span><b>1 psi</b> – ${EFFECT_TEXT.psi1}</span><span>${fmtKM(r1)} | ~${fmtPop(pop1)} ppl</span></div>
+    <div class="r"><span><b>Thermal (3rd°)</b> – ${EFFECT_TEXT.therm3}</span><span>${fmtKM(rT)} | ~${fmtPop(popTh)} ppl</span></div>`;
+}
+function render(){
+  $('tlabel').textContent=hourSince+' h';
+  const df=doseFactor(hourSince), lab=$('decay');
+  lab.textContent='≈ '+df.toFixed(2)+'× dose vs 1h'; lab.className='badge '+(df<0.15?'ok':df<0.5?'warn':'danger');
+  bursts.forEach(b=>{
+    const sc=scaleByYield(b.kt), att=altitudeAtten(b.alt), c=[b.lat,b.lng];
+    const r1=sc.over1psi_m*att, r5=sc.over5psi_m*att, r20=sc.over20psi_m*att, rT=sc.thermal_3rd_m*att;
+    b.rings.psi1.setLatLng(c).setRadius(r1);
+    b.rings.psi5.setLatLng(c).setRadius(r5);
+    b.rings.psi20.setLatLng(c).setRadius(r20);
+    b.rings.therm2.setLatLng(c).setRadius(sc.thermal_2nd_m*att);
+    b.rings.therm3.setLatLng(c).setRadius(rT);
+    b.rings.fire.setLatLng(c).setRadius(sc.fireball_m*(b.alt===0?1:Math.max(0.6,att)));
+    const down = Number($('wdir').value||b.dir||90);
+    b.rings.lbls.psi20.setLatLng(dest(b.lat,b.lng,r20*1.05,down));
+    b.rings.lbls.psi5.setLatLng(dest(b.lat,b.lng,r5*1.05,down));
+    b.rings.lbls.psi1.setLatLng(dest(b.lat,b.lng,r1*1.05,down));
+    b.rings.lbls.therm3.setLatLng(dest(b.lat,b.lng,rT*1.05,down));
+    const out=falloutPolygon(b.lat,b.lng,b.kt,b.dir,b.spd,b.alt,b.terrain,b.precip,hourSince);
+    if($('fallout').checked) b.plume.setLatLngs(out.poly.map(p=>[p.lat,p.lng])).setStyle({fillOpacity:out.opacity});
+    else b.plume.setLatLngs([]);
+    if(b.id===selectedId){ b.marker.getElement()?.classList.add('sel'); updateSelectedSummary(b); }
+    else { b.marker.getElement()?.classList.remove('sel'); }
+  });
+}
+
+// Pop heat
+$('popOn').onchange=e=>{ if(e.target.checked){ if(!popLayer){ popLayer=L.heatLayer(popPointsScaled(),{radius:18, blur:20, maxZoom:11, max:50, gradient:{0:'#003',0.2:'#044',0.4:'#066',0.6:'#0a8',0.8:'#7cf',1:'#fff'}}).addTo(map); } popLayer.setOpacity(popOpacity);
+  } else { if(popLayer) map.removeLayer(popLayer); } };
+$('popAlpha').oninput=e=>{ popOpacity=+e.target.value; if(popLayer) popLayer.setOpacity(popOpacity); };
+
+// Commute
+$('commute').onclick=()=>{ const b=bursts[bursts.length-1]; if(!b) return setCommute('Add a burst first.','warn');
+  const plumeKmh=Math.max(5,b.spd*3.6);
+  function alongWindKm(target){
+    const dKm=havKm({lat:b.lat,lng:b.lng}, target);
+    const y=Math.sin(d2r(target.lng-b.lng))*Math.cos(d2r(target.lat));
+    const x=Math.cos(d2r(b.lat))*Math.sin(d2r(target.lat)) - Math.sin(d2r(b.lat))*Math.cos(d2r(target.lat))*Math.cos(d2r(target.lng-b.lng));
+    const br=(r2d(Math.atan2(y,x))+360)%360; const off=angDiff(b.dir, br); return dKm*Math.cos(d2r(off));
+  }
+  const aW=alongWindKm(WORK), aH=alongWindKm(HOME);
+  const tW=aW>0 ? aW/plumeKmh : Infinity, tH=aH>0 ? aH/plumeKmh : Infinity;
+  const mph=Math.max(5, Number($('mph').value)), kmh=mph*1.60934;
+  const roadKm=havKm(WORK,HOME)*1.35, tDrive=roadKm/kmh;
+  if(tW<0.4) return setCommute('Shelter at WORK now (plume imminent).','danger');
+  if(tDrive<tH) return setCommute('GO HOME NOW (you beat plume).','ok');
+  if(isFinite(tH)) return setCommute('Shelter. Plume reaches HOME first. Wait 24–48h, then move.','warn');
+  return setCommute('GO HOME (home upwind).','ok');
+};
+function setCommute(msg, cls){ const el=$('commuteResult'); el.textContent=msg; el.className='badge '+cls; }
+
+// Export
+$('snapshot').onclick=async()=>{ if(!window.html2canvas){ await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js'; s.onload=()=>res(); s.onerror=()=>rej(); document.body.appendChild(s); }); } const canvas=await window.html2canvas(document.getElementById('map'),{useCORS:true,allowTaint:true,logging:false}); const a=document.createElement('a'); a.download='nuke_scenario_'+Date.now()+'.png'; a.href=canvas.toDataURL('image/png'); a.click(); };
+$('print').onclick=()=>window.print();
+$('share').onclick=()=>{ const state={home:HOME,work:WORK,hour:hourSince,showFallout:true,current,bursts:bursts.map(b=>({lat:b.lat,lng:b.lng,kt:b.kt,alt:b.alt,dir:b.dir,spd:b.spd,precip:b.precip}))}; const hash=btoa(unescape(encodeURIComponent(JSON.stringify(state)))); location.hash=hash; navigator.clipboard?.writeText(location.href).then(()=>toast('Link copied')).catch(()=>toast('Hash set; copy URL manually')); };
+$('csv').onclick=()=>{ const rows=[['id','lat','lng','kt','alt_m','wind_deg','wind_mps','r20_m','r5_m','r1_m','rThermal_m']]; bursts.forEach(b=>{ const sc=scaleByYield(b.kt), att=altitudeAtten(b.alt); rows.push([b.id,b.lat,b.lng,b.kt,b.alt,b.dir,b.spd, sc.over20psi_m*att, sc.over5psi_m*att, sc.over1psi_m*att, sc.thermal_3rd_m*att]); }); const csv=rows.map(r=>r.join(',')).join('\n'); const a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv); a.download='nuke_scenarios.csv'; a.click(); };
+
+// Map clicks
+map.on('click', e=>{ if(adding){ addBurstAt(e.latlng.lat,e.latlng.lng); adding=false; } });
+
+// Init
+render();
+</script>
+</body>
+</html>
