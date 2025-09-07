@@ -7,11 +7,24 @@ const getCSS = v => getComputedStyle(document.documentElement).getPropertyValue(
 function lsGet(k, def){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; } }
 function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 const showErr = msg => { const e = $('#err'); if(!e) return; e.textContent = msg; e.style.display='block'; setTimeout(()=>e.style.display='none', 4000); };
+const showHint = msg => { const e=$('#hint'); if(!e) return; e.textContent=msg; e.style.display='block'; setTimeout(()=>e.style.display='none',4000); };
 
 /* ===================== globals ===================== */
 let useML=false, mlmap, lmap, addMode=false;
-let windDeg=lsGet('windDeg',90), windSpd=lsGet('windSpd',10);
+let uiState = lsGet('uiState', {});
+let windDeg = uiState.windDeg ?? lsGet('windDeg',90),
+    windSpd = uiState.windSpd ?? lsGet('windSpd',10);
 let effects=[], myPos=null, popHeatLayer=null, shelterMarkers=[], lastBurst=null, counties=null;
+let bursts=[];
+
+// apply persisted UI state to controls
+$('#basemap').value = uiState.basemap ?? 'auto';
+$('#terrainOn').checked = uiState.terrainOn ?? true;
+$('#hillshadeOn').checked = uiState.hillshadeOn ?? true;
+$('#exagg').value = uiState.exagg ?? 1.4; $('#exVal').textContent=$('#exagg').value;
+$('#wx').value = uiState.wx ?? 'dry';
+$('#popHeat').checked = uiState.popHeatOn ?? false;
+const pht = $('#popHeatTop'); if(pht) pht.checked = uiState.popHeatOn ?? false;
 
 function getFlag(name){ return new URLSearchParams(location.search).has(name); }
 function webglOk(){
@@ -24,7 +37,10 @@ function webglOk(){
 
 /* ===================== map init ===================== */
 function initMap(){
-  const start=[45.85,-123.49];
+  const start = uiState.camera?.center ? [uiState.camera.center[0], uiState.camera.center[1]] : [45.85,-123.49];
+  const startZoom = uiState.camera?.zoom ?? 8.6;
+  const startPitch = uiState.camera?.pitch ?? 0;
+  const startBearing = uiState.camera?.bearing ?? 0;
 
   if(webglOk()){
     useML=true; $('#map').style.display='none';
@@ -34,15 +50,16 @@ function initMap(){
         "version":8,
         "sources":{
           "osm":{"type":"raster","tiles":["https://a.tile.openstreetmap.org/{z}/{x}/{y}.png","https://b.tile.openstreetmap.org/{z}/{x}/{y}.png","https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"],"tileSize":256,"attribution":"© OSM"},
-          "sat":{"type":"raster","tiles":["https://tiles.stadiamaps.com/tiles/alidade_satellite/{z}/{x}/{y}.jpg"],"tileSize":256,"attribution":"Satellite demo"},
+          "esriSat":{"type":"raster","tiles":["https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],"tileSize":256,"attribution":"ESRI"},
+          "esriHill":{"type":"raster","tiles":["https://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}"],"tileSize":256},
           "terrain-dem":{"type":"raster-dem","tiles":["https://demotiles.maplibre.org/terrain-tiles/{z}/{x}/{y}.png"],"tileSize":256}
         },
         "layers":[
           {"id":"baseraster","type":"raster","source":"osm","minzoom":0,"maxzoom":19},
-          {"id":"hillshade","type":"hillshade","source":"terrain-dem","layout":{"visibility":"visible"},"paint":{"hillshade-exaggeration":0.6}}
+          {"id":"hillshade","type":"raster","source":"esriHill","paint":{"raster-opacity":0.55}}
         ]
       },
-      center:[start[1],start[0]], zoom:8.6, pitch:0
+      center:[start[1],start[0]], zoom:startZoom, pitch:startPitch, bearing:startBearing
     });
     mlmap.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-left');
     mlmap.addControl(new maplibregl.ScaleControl({maxWidth:120,unit:'imperial'}));
@@ -51,25 +68,60 @@ function initMap(){
       if(pinsHandleMapClick(e.lngLat.lat, e.lngLat.lng)) return;
       if(addMode){ placeBurst([e.lngLat.lat, e.lngLat.lng]); addMode=false; $('#add').classList.remove('active'); }
     });
+    mlmap.on('load',()=>{ refreshTiles(); toggleTerrain(); toggleHillshade(); updateStatus(); loadPins(); setPopHeat($('#popHeat').checked); });
+    mlmap.on('move', updateStatus);
+    mlmap.on('moveend', saveUIState);
 
   } else {
     useML=false; $('#mlmap').style.display='none';
-    lmap=L.map('map').setView(start,9);
+    lmap=L.map('map').setView(start, startZoom);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(lmap);
-    L.tileLayer('https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',{opacity:0.5}).addTo(lmap);
+    L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}',{opacity:0.55}).addTo(lmap);
 
     lmap.on('click', e=>{
       if(pinsHandleMapClick(e.latlng.lat, e.latlng.lng)) return;
       if(addMode){ placeBurst([e.latlng.lat, e.latlng.lng]); addMode=false; $('#add').classList.remove('active'); }
     });
+    refreshTiles(); toggleTerrain(); toggleHillshade(); updateStatus(); loadPins(); setPopHeat($('#popHeat').checked);
+    lmap.on('move', updateStatus);
+    lmap.on('moveend', saveUIState);
   }
 }
 initMap();
 
+let resizeTimer;
+function mapResizeSoon(){
+  clearTimeout(resizeTimer);
+  resizeTimer=setTimeout(()=>{ if(useML) mlmap.resize(); else lmap.invalidateSize(); },100);
+}
+
+function saveUIState(){
+  uiState={
+    basemap: $('#basemap').value,
+    terrainOn: $('#terrainOn').checked,
+    hillshadeOn: $('#hillshadeOn').checked,
+    exagg: +$('#exagg').value,
+    windDeg, windSpd,
+    wx: $('#wx').value,
+    popHeatOn: $('#popHeat').checked,
+    camera: useML ? {center:[mlmap.getCenter().lat, mlmap.getCenter().lng], zoom:mlmap.getZoom(), pitch:mlmap.getPitch(), bearing:mlmap.getBearing()} : {center:[lmap.getCenter().lat, lmap.getCenter().lng], zoom:lmap.getZoom(), pitch:0, bearing:0}
+  };
+  lsSet('uiState', uiState);
+}
+
+function updateStatus(){
+  const zoom = useML ? mlmap.getZoom() : lmap.getZoom();
+  const pitch = useML ? mlmap.getPitch() : 0;
+  const baseSel = $('#basemap').value;
+  const baseLabel = baseSel==='sat' ? 'ESRI Sat + Hillshade' : 'OSM';
+  $('#status').textContent = `Z ${zoom.toFixed(1)} • pitch ${pitch.toFixed(0)}° • ${baseLabel}`;
+}
+
 /* ===================== panel folding ===================== */
 for(const h of document.querySelectorAll('.panel header')){
-  h.addEventListener('click',()=>h.parentElement.classList.toggle('open'));
+  h.addEventListener('click',()=>{ h.parentElement.classList.toggle('open'); mapResizeSoon(); });
 }
+window.addEventListener('resize', mapResizeSoon);
 
 /* ===================== top bar handlers ===================== */
 $('#preset').onchange=e=>{ if(e.target.value!=='custom') $('#yield').value=e.target.value; };
@@ -77,31 +129,41 @@ $('#add').onclick=()=>{ addMode=!addMode; $('#add').classList.toggle('active',ad
 $('#clear').onclick=()=>clearMap();
 $('#refreshTiles').onclick=refreshTiles;
 $('#btnRefresh2').onclick=refreshTiles;
-$('#bmSel').onchange=e=>{ $('#basemap').value=e.target.value; refreshTiles(); };
-$('#basemap').onchange=refreshTiles;
+$('#bmSel').onchange=e=>{ $('#basemap').value=e.target.value; refreshTiles(); saveUIState(); updateStatus(); };
+$('#basemap').onchange=()=>{ refreshTiles(); saveUIState(); updateStatus(); };
 $('#precip').oninput=e=>$('#precipVal').textContent=e.target.value;
 $('#humid').oninput=e=>$('#humidVal').textContent=e.target.value;
 $('#calcPop').onclick=calcPopulation;
 
-$('#terrainOn').onchange=()=>toggleTerrain();
-$('#hillshadeOn').onchange=()=>toggleHillshade();
-$('#exagg').oninput=e=>{ $('#exVal').textContent=e.target.value; setExaggeration(+e.target.value); };
+$('#terrainOn').onchange=()=>{ toggleTerrain(); saveUIState(); };
+$('#hillshadeOn').onchange=()=>{ toggleHillshade(); saveUIState(); };
+$('#exagg').oninput=e=>{ $('#exVal').textContent=e.target.value; if($('#terrainOn').checked) setExaggeration(+e.target.value); saveUIState(); };
+$('#wx').onchange=saveUIState;
 
 function refreshTiles(){
   if(useML){
     const sel=$('#basemap').value;
-    const src = sel==='sat' ? 'sat' : 'osm';
+    const src = sel==='sat' ? 'esriSat' : 'osm';
     try{ if(mlmap.getLayer('baseraster')) mlmap.removeLayer('baseraster'); }catch{}
     mlmap.addLayer({"id":"baseraster","type":"raster","source":src,"minzoom":0,"maxzoom":19}, 'hillshade');
   }else{
     lmap.eachLayer(l=>{ if(l._url) l.remove(); });
     const sel=$('#basemap').value;
-    if(sel==='sat'){ L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_satellite/{z}/{x}/{y}.jpg',{maxZoom:18}).addTo(lmap); }
+    if(sel==='sat'){ L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19}).addTo(lmap); }
     else{ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(lmap); }
-    L.tileLayer('https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',{opacity:0.5}).addTo(lmap);
+    L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}',{opacity:0.55}).addTo(lmap);
   }
 }
-function toggleTerrain(){ if(useML) mlmap.setTerrain($('#terrainOn').checked?{source:'terrain-dem',exaggeration:+$('#exagg').value}:null); }
+function toggleTerrain(){
+  if(!useML) return;
+  if($('#terrainOn').checked){
+    mlmap.setTerrain({source:'terrain-dem',exaggeration:+$('#exagg').value});
+    if(mlmap.getPitch()<30) mlmap.easeTo({pitch:45});
+    if(!lsGet('tiltHintShown',false)){ showHint('Two-finger drag up/down to tilt'); lsSet('tiltHintShown',true); }
+  } else {
+    mlmap.setTerrain(null);
+  }
+}
 function toggleHillshade(){ if(useML) try{ mlmap.setLayoutProperty('hillshade','visibility',$('#hillshadeOn').checked?'visible':'none'); }catch{} }
 function setExaggeration(x){ if(useML) try{ mlmap.setTerrain({source:'terrain-dem',exaggeration:x}); }catch{} }
 
@@ -135,14 +197,17 @@ function plumeGJ(center, brgDeg, lenKm, widthKm){
 
 /* ===================== drawing helpers ===================== */
 let layersML=[], layersLF=[];
-function addFill(gj,id,color,fop,line=true){
+function addFill(gj,id,color,fop,line=true,meta=null){
   if(useML){
     mlmap.addSource(id,{type:'geojson',data:gj});
     mlmap.addLayer({id, type:'fill', source:id, paint:{'fill-color':color,'fill-opacity':fop}});
     if(line) mlmap.addLayer({id:id+'l', type:'line', source:id, paint:{'line-color':color,'line-width':2,'line-opacity':0.9}});
+    if(meta){ const handler=e=>showEffectPopup(e.lngLat, meta); mlmap.on('click', id, handler); if(line) mlmap.on('click', id+'l', handler); }
     layersML.push(id);
   }else{
     const lay=L.geoJSON(gj,{style:{color,weight:2,fillColor:color,fillOpacity:fop}}).addTo(lmap);
+    if(meta) lay.on('click',e=>showEffectPopup(e.latlng, meta));
+    if(meta && meta.label==='Fallout plume') lay._plume=true;
     layersLF.push(lay);
   }
 }
@@ -159,6 +224,7 @@ function flyTo(lat,lng){ if(useML) mlmap.flyTo({center:[lng,lat], zoom:12}); els
 
 function clearMap(){
   effects=[];
+  bursts=[];
   if(useML){
     layersML.forEach(id=>{ try{ mlmap.removeLayer(id+'l'); }catch{} try{ mlmap.removeLayer(id); }catch{} try{ mlmap.removeSource(id);}catch{} });
     layersML=[];
@@ -175,6 +241,24 @@ function clearMap(){
   $('#shelterRead').textContent='—';
 }
 
+function showEffectPopup(ll, meta){
+  let size = meta.radius?`Radius ${meta.radius.toFixed(2)} km`:`Len ${meta.len.toFixed(1)} km, width ${meta.width.toFixed(1)} km`;
+  let pop='—';
+  if(counties){
+    let total=0;
+    counties.features.forEach(c=>{
+      try{
+        const inter=turf.intersect(meta.gj, c);
+        if(inter){ const frac=turf.area(inter)/turf.area(c); total+=Math.round(c.properties.pop*frac); }
+      }catch{}
+    });
+    pop=total.toLocaleString();
+  }
+  const html=`<strong>${meta.label}</strong><br>Yield ${meta.y} kt, Alt ${meta.alt} m, WX ${meta.wx}<br>${size}<br>Population: ${pop}`;
+  if(useML){ new maplibregl.Popup().setLngLat([ll.lng,ll.lat]).setHTML(html).addTo(mlmap); }
+  else{ L.popup().setLatLng(ll).setContent(html).openOn(lmap); }
+}
+
 /* ===================== bursts ===================== */
 function placeBurst(latlng){
   lastBurst=latlng; const [lat,lng]=latlng;
@@ -186,19 +270,44 @@ function placeBurst(latlng){
   const r5 =turf.circle([lng,lat], ringKm(y,5), {steps:128});
   const r1 =turf.circle([lng,lat], ringKm(y,1), {steps:128});
   const th =turf.circle([lng,lat], thermalKm(y), {steps:128});
-  addFill(r20,'r20_'+Math.random(), getCSS('--psi20'), .28);
-  addFill(r5 ,'r5_' +Math.random(), getCSS('--psi5') , .25);
-  addFill(r1 ,'r1_' +Math.random(), getCSS('--psi1') , .22);
-  addFill(th ,'rT_' +Math.random(), getCSS('--therm'), .15);
+  addFill(r20,'r20_'+Math.random(), getCSS('--psi20'), .28,true,{label:'20 psi',y,alt:a,wx,radius:ringKm(y,20),gj:r20});
+  addFill(r5 ,'r5_' +Math.random(), getCSS('--psi5') , .25,true,{label:'5 psi',y,alt:a,wx,radius:ringKm(y,5),gj:r5});
+  addFill(r1 ,'r1_' +Math.random(), getCSS('--psi1') , .22,true,{label:'1 psi',y,alt:a,wx,radius:ringKm(y,1),gj:r1});
+  addFill(th ,'rT_' +Math.random(), getCSS('--therm'), .15,true,{label:'Thermal 3rd°',y,alt:a,wx,radius:thermalKm(y),gj:th});
 
   if($('#fallout').checked){
     const p=plumeParams(y,wx,a,precip,humid);
     const plume=plumeGJ([lng,lat], windDeg, p.len, p.width);
-    addFill(plume,'pl_'+Math.random(), getCSS('--fall'), .22,false);
+    addFill(plume,'pl_'+Math.random(), getCSS('--fall'), .22,false,{label:'Fallout plume',y,alt:a,wx,len:p.len,width:p.width,gj:plume});
     effects.push({gj:plume,label:'Fallout plume'});
   }
   effects.push({gj:r20,label:'20 psi'}); effects.push({gj:r5,label:'5 psi'}); effects.push({gj:r1,label:'1 psi'}); effects.push({gj:th,label:'Thermal 3rd°'});
+  bursts.push({lat,lng,y,a,wx,precip,humid});
   calcPopulation(); if(myPos) updateETA([lat,lng], windDeg);
+}
+
+function recalcPlumes(){
+  if(useML){
+    layersML = layersML.filter(id=>{
+      if(id.startsWith('pl_')){
+        try{ mlmap.removeLayer(id+'l'); }catch{}; try{ mlmap.removeLayer(id); }catch{}; try{ mlmap.removeSource(id); }catch{};
+        return false;
+      }
+      return true;
+    });
+  }else{
+    layersLF = layersLF.filter(l=>{ if(l._plume){ try{ l.remove(); }catch{}; return false;} return true; });
+  }
+  effects = effects.filter(e=>e.label!=='Fallout plume');
+  bursts.forEach(b=>{
+    if($('#fallout').checked){
+      const p=plumeParams(b.y,b.wx,b.a,b.precip,b.humid);
+      const plume=plumeGJ([b.lng,b.lat], windDeg, p.len, p.width);
+      addFill(plume,'pl_'+Math.random(), getCSS('--fall'), .22,false,{label:'Fallout plume',y:b.y,alt:b.a,wx:b.wx,len:p.len,width:p.width,gj:plume});
+      effects.push({gj:plume,label:'Fallout plume'});
+    }
+  });
+  calcPopulation();
 }
 
 /* ===================== population ===================== */
@@ -206,9 +315,9 @@ async function loadCounties(){
   try{ const r=await fetch('counties.json',{cache:'no-store'}); if(r.ok){ counties=await r.json(); return; } }catch{}
   const tag=document.getElementById('countiesData'); if(tag) counties = JSON.parse(tag.textContent);
 }
-$('#popHeat').onchange=()=>{
-  if(!counties){ alert('Counties still loading'); $('#popHeat').checked=false; return; }
-  if($('#popHeat').checked){
+function setPopHeat(on){
+  if(!counties){ alert('Counties still loading'); $('#popHeat').checked=false; const t=$('#popHeatTop'); if(t) t.checked=false; return; }
+  if(on){
     if(useML){
       mlmap.addSource('popHeat',{type:'geojson',data:counties});
       mlmap.addLayer({id:'popHeat',type:'fill',source:'popHeat',
@@ -220,7 +329,10 @@ $('#popHeat').onchange=()=>{
     if(useML){ try{ mlmap.removeLayer('popHeat'); mlmap.removeSource('popHeat'); }catch{} }
     else { try{ lmap.removeLayer(popHeatLayer);}catch{} popHeatLayer=null; }
   }
-};
+  saveUIState();
+}
+$('#popHeat').onchange=e=>{ const t=$('#popHeatTop'); if(t) t.checked=e.target.checked; setPopHeat(e.target.checked); };
+$('#popHeatTop')?.addEventListener('change',e=>{ $('#popHeat').checked=e.target.checked; setPopHeat(e.target.checked); });
 async function calcPopulation(){
   if(!counties){ $('#popRead').textContent='Population: (loading counties…)'; return; }
   if(effects.length===0){ $('#popRead').textContent='Population in current effects: —'; return; }
@@ -245,7 +357,7 @@ async function calcPopulation(){
 const HUD=$('#windHUD'), Hhead=$('#windHead'), Hrez=$('#windResize');
 (function(){
   if(!HUD) return;
-  const s=lsGet('HUDpos',{left:'10px',bottom:'10px',w:300,h:210});
+  const s=lsGet('HUDpos',{left:'10px',bottom:'70px',w:300,h:210});
   HUD.style.left=s.left; HUD.style.bottom=s.bottom||'10px'; HUD.style.width=s.w+'px'; HUD.style.height=s.h+'px';
   let drag=false,sx=0,sy=0,ox=0,oy=0;
   Hhead.addEventListener('pointerdown',ev=>{drag=true;sx=ev.clientX;sy=ev.clientY; const r=HUD.getBoundingClientRect(); ox=r.left; oy=r.top; Hhead.setPointerCapture(ev.pointerId);});
@@ -277,14 +389,16 @@ function drawCompass(){
 function compDrag(ev){
   const rect=comp.getBoundingClientRect();
   const x=ev.clientX-rect.left-rect.width/2, y=ev.clientY-rect.top-rect.height/2;
-  windDeg=(toDeg(Math.atan2(x,-y))+360)%360; drawCompass(); updateETAFromLast();
+  windDeg=(toDeg(Math.atan2(x,-y))+360)%360; drawCompass(); updateETAFromLast(); recalcPlumes(); saveUIState();
 }
 comp?.addEventListener('pointerdown',ev=>{compDrag(ev); comp.setPointerCapture(ev.pointerId);});
 comp?.addEventListener('pointermove',ev=>{ if(ev.buttons) compDrag(ev);});
-$('#wind').addEventListener('input',e=>{ windDeg=+e.target.value; drawCompass(); updateETAFromLast(); });
-$('#windNum').addEventListener('input',e=>{ windDeg=+e.target.value; drawCompass(); updateETAFromLast(); });
-$('#windSpd').addEventListener('input',e=>{ windSpd=+e.target.value; drawCompass(); updateETAFromLast(); });
-$('#windNumSpd').addEventListener('input',e=>{ windSpd=+e.target.value; drawCompass(); updateETAFromLast(); });
+$('#wind').addEventListener('input',e=>{ windDeg=+e.target.value; drawCompass(); updateETAFromLast(); saveUIState(); });
+$('#windNum').addEventListener('input',e=>{ windDeg=+e.target.value; drawCompass(); updateETAFromLast(); saveUIState(); });
+$('#windSpd').addEventListener('input',e=>{ windSpd=+e.target.value; drawCompass(); updateETAFromLast(); saveUIState(); });
+$('#windNumSpd').addEventListener('input',e=>{ windSpd=+e.target.value; drawCompass(); updateETAFromLast(); saveUIState(); });
+$('#wind').addEventListener('change',recalcPlumes); $('#windNum').addEventListener('change',recalcPlumes);
+$('#windSpd').addEventListener('change',recalcPlumes); $('#windNumSpd').addEventListener('change',recalcPlumes);
 drawCompass();
 
 $('#btnGPS')?.addEventListener('click', async ()=>{
@@ -293,7 +407,15 @@ $('#btnGPS')?.addEventListener('click', async ()=>{
     myPos=[pos.coords.latitude,pos.coords.longitude];
     addMarker(myPos[0],myPos[1],{color:'#22c55e'});
     updateETAFromLast();
-  }catch{ showErr('GPS failed (permissions or no fix)'); }
+  }catch{
+    showErr('GPS failed – allow Location for eyesintheflock.github.io');
+    try{
+      const pos = await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(p=>res(p),e=>rej(e),{enableHighAccuracy:false,timeout:10000,maximumAge:60000}));
+      myPos=[pos.coords.latitude,pos.coords.longitude];
+      addMarker(myPos[0],myPos[1],{color:'#22c55e'});
+      updateETAFromLast();
+    }catch{ showErr('GPS still unavailable'); }
+  }
 });
 function updateETAFromLast(){ if(lastBurst && myPos) updateETA(lastBurst, windDeg); }
 function updateETA(burstLatLng, brgDeg){
@@ -347,7 +469,7 @@ $('#findShelter')?.addEventListener('click', async ()=>{
 let pinMode=false, pins=[], pinIdCounter=1, pinsSelectedId=null;
 $('#pinMode')?.addEventListener('click', ()=>{ pinMode=!pinMode; $('#pinMode').classList.toggle('active',pinMode); if(pinMode){ addMode=false; $('#add').classList.remove('active'); } });
 $('#pinAddNow')?.addEventListener('click', ()=>{ const c = getMapCenter(); addPin(c.lat,c.lng); });
-$('#pinClearAll')?.addEventListener('click', ()=>{ pins.forEach(p=>p.marker.remove()); pins=[]; renderPinList(); });
+$('#pinClearAll')?.addEventListener('click', ()=>{ pins.forEach(p=>p.marker.remove()); pins=[]; savePins(); renderPinList(); });
 $('#homeCenter')?.addEventListener('click', ()=>centerOnPinType('home'));
 $('#workCenter')?.addEventListener('click', ()=>centerOnPinType('work'));
 $('#goSelected')?.addEventListener('click', ()=>{ const p=pins.find(x=>x.id===pinsSelectedId); if(!p) return alert('Select a pin in the list first.'); flyTo(p.lat,p.lng); });
@@ -359,27 +481,35 @@ function addPin(lat,lng){
   const type=$('#pinType').value, color=$('#pinColor').value;
   const id=pinIdCounter++; const label=prompt('Label for pin?', type)||type;
   const m = addMarker(lat,lng,{color});
-  const pin={id,lat,lng,type,color,label,marker:m,notes:''}; pins.push(pin);
-
+  const pin={id,lat,lng,type,color,label,marker:m,notes:'',locked:false}; pins.push(pin);
+  attachPinHandlers(pin);
+  renderPinList(true); savePins();
+}
+function attachPinHandlers(pin){
+  const m=pin.marker;
   if(useML){
-    m._m.setDraggable(true);
-    m._m.on('dragend',ev=>{ const ll=ev.target.getLngLat(); pin.lng=ll.lng; pin.lat=ll.lat; renderPinList(false); });
-    m.on('click',()=>editPin(pin.id));
+    m._m.setDraggable(!pin.locked);
+    const popup=new maplibregl.Popup({offset:25}).setHTML(pinPopupHTML(pin));
+    m._m.setPopup(popup);
+    m._m.on('dragend',ev=>{ const ll=ev.target.getLngLat(); pin.lng=ll.lng; pin.lat=ll.lat; renderPinList(false); savePins();});
   }else{
-    m._m.dragging.enable();
-    m._m.on('dragend',ev=>{ const ll=ev.target.getLatLng(); pin.lat=ll.lat; pin.lng=ll.lng; renderPinList(false); });
-    m._m.on('click',()=>editPin(pin.id));
+    if(!pin.locked) m._m.dragging.enable(); else m._m.dragging.disable();
+    m._m.bindPopup(pinPopupHTML(pin));
+    m._m.on('dragend',ev=>{ const ll=ev.target.getLatLng(); pin.lat=ll.lat; pin.lng=ll.lng; renderPinList(false); savePins();});
   }
-  renderPinList(true);
+}
+function pinPopupHTML(p){
+  return `<strong>${p.label}</strong><br>${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}${p.notes?`<br>${p.notes}`:''}`;
 }
 function editPin(id){
   const p = pins.find(x=>x.id===id); if(!p) return;
   const lbl = prompt('Edit label:', p.label); if(lbl!=null) p.label=lbl;
   const nt  = prompt('Notes (free text):', p.notes??''); if(nt!=null) p.notes=nt;
-  renderPinList(false);
+  attachPinHandlers(p);
+  renderPinList(false); savePins();
 }
 function deletePin(id){
-  const i=pins.findIndex(x=>x.id===id); if(i<0) return; pins[i].marker.remove(); pins.splice(i,1); renderPinList(true);
+  const i=pins.findIndex(x=>x.id===id); if(i<0) return; pins[i].marker.remove(); pins.splice(i,1); savePins(); renderPinList(true);
 }
 function centerOnPinType(t){
   const p = pins.find(x=>x.type===t);
@@ -400,6 +530,7 @@ function renderPinList(scrollBottom=true){
         <button class="smallbtn" data-act="go">Go</button>
         <button class="smallbtn" data-act="edit">Edit</button>
         <button class="smallbtn" data-act="del">Del</button>
+        <button class="smallbtn" data-act="lock">${p.locked?'Unlock':'Lock'}</button>
       </div>
     </div>`).join('');
   box.querySelectorAll('.pin-item').forEach(el=>{
@@ -408,8 +539,18 @@ function renderPinList(scrollBottom=true){
     el.querySelector('[data-act="go"]').onclick=(e)=>{ e.stopPropagation(); const p=pins.find(x=>x.id===id); flyTo(p.lat,p.lng); };
     el.querySelector('[data-act="edit"]').onclick=(e)=>{ e.stopPropagation(); editPin(id); };
     el.querySelector('[data-act="del"]').onclick=(e)=>{ e.stopPropagation(); deletePin(id); };
+    el.querySelector('[data-act="lock"]').onclick=(e)=>{ e.stopPropagation(); togglePinLock(id); };
   });
   if(scrollBottom) box.scrollTop=box.scrollHeight;
+}
+function togglePinLock(id){
+  const p=pins.find(x=>x.id===id); if(!p) return; p.locked=!p.locked; attachPinHandlers(p); renderPinList(false); savePins();
+}
+function savePins(){ lsSet('pins', pins.map(p=>({id:p.id,lat:p.lat,lng:p.lng,type:p.type,color:p.color,label:p.label,notes:p.notes,locked:p.locked}))); }
+function loadPins(){
+  const data=lsGet('pins',[]);
+  data.forEach(d=>{ const m=addMarker(d.lat,d.lng,{color:d.color}); const pin={...d,marker:m}; pins.push(pin); attachPinHandlers(pin); pinIdCounter=Math.max(pinIdCounter,d.id+1); });
+  renderPinList(false);
 }
 
 /* ===================== LIVE WIND (Open-Meteo) ===================== */
@@ -454,32 +595,14 @@ function applyLiveWind(deg, spd, whereText) {
   $('#windSrc').innerHTML =
     `<span class="src-ok">Live wind</span> ${deg.toFixed(0)}° (${bearingToCardinal(deg)}), ` +
     `${spd.toFixed(1)} m/s • ${whereText} • ${hh}:${mm}`;
+  recalcPlumes();
+  saveUIState();
 }
 
-async function ensureGPS() {
-  if (myPos) return true;
-  try {
-    const pos = await new Promise((res, rej) =>
-      navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 10000 })
-    );
-    myPos = [pos.coords.latitude, pos.coords.longitude];
-    addMarker(myPos[0], myPos[1], { color: '#22c55e' });
-    return true;
-  } catch {
-    showErr('GPS needed for live wind');
-    return false;
-  }
-}
-
-$('#liveWindNow')?.addEventListener('click', async () => {
-  if (!(await ensureGPS())) return;
-  await fetchLiveWind(myPos[0], myPos[1]);
-});
-
-$('#liveWindOnce')?.addEventListener('click', async () => {
-  if (!myPos) { showErr('Tap “Use live wind (GPS)” first.'); return; }
-  await fetchLiveWind(myPos[0], myPos[1]);
+$('#liveWind')?.addEventListener('click', async () => {
+  const c = myPos ? {lat:myPos[0],lng:myPos[1]} : getMapCenter();
+  await fetchLiveWind(c.lat, c.lng);
 });
 
 /* ===================== boot small tasks ===================== */
-(async function(){ await loadCounties(); renderPinList(false); })();
+(async function(){ await loadCounties(); })();
