@@ -8,10 +8,31 @@ function lsGet(k, def){ try{ const v = localStorage.getItem(k); return v ? JSON.
 function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 const showErr = msg => { const e = $('#err'); if(!e) return; e.textContent = msg; e.style.display='block'; setTimeout(()=>e.style.display='none', 4000); };
 if ('serviceWorker' in navigator) {navigator.serviceWorker.register('sw.js').catch(console.error);}
+
+// Throttle utility for smooth drag/HUD sync
+function throttle(fn, ms = 50) {
+  let last = 0, raf = null, queuedArgs = null;
+  return (...args) => {
+    const now = performance.now();
+    queuedArgs = args;
+    const run = () => { last = now; raf = null; fn(...queuedArgs); queuedArgs = null; };
+    if (now - last >= ms) { if (raf) cancelAnimationFrame(raf); run(); }
+    else if (!raf) { raf = requestAnimationFrame(run); }
+  };
+}
 /* ===================== globals ===================== */
 let useML=false, mlmap, lmap, addMode=false;
 let windDeg=lsGet('windDeg',90), windSpd=lsGet('windSpd',10);
 let effects=[], myPos=null, popHeatLayer=null, shelterMarkers=[], lastBurst=null, counties=null;
+
+function updateTopbar(){
+  const degEl=document.getElementById('tb-wind-deg');
+  const spdEl=document.getElementById('tb-wind-speed');
+  if(degEl) degEl.textContent=`${Math.round(windDeg)}°`;
+  if(spdEl) spdEl.textContent=`${windSpd} m/s`;
+  const arrow=document.getElementById('tb-wind-arrow');
+  if(arrow) arrow.style.transform=`rotate(${windDeg}deg)`;
+}
 
 function getFlag(name){ return new URLSearchParams(location.search).has(name); }
 function webglOk(){
@@ -54,7 +75,7 @@ function initMap(){
 
   } else {
     useML=false; $('#mlmap').style.display='none';
-    lmap=L.map('map').setView(start,9);
+    lmap=L.map('map', { renderer: L.canvas() }).setView(start,9);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(lmap);
     L.tileLayer('https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',{opacity:0.5}).addTo(lmap);
 
@@ -273,6 +294,7 @@ function drawCompass(){
   $('#wind').value=Math.round(windDeg); $('#windNum').value=Math.round(windDeg);
   $('#windSpd').value=windSpd; $('#windNumSpd').value=windSpd;
   lsSet('windDeg',windDeg); lsSet('windSpd',windSpd);
+  updateTopbar();
 }
 function compDrag(ev){
   const rect=comp.getBoundingClientRect();
@@ -286,6 +308,16 @@ $('#windNum').addEventListener('input',e=>{ windDeg=+e.target.value; drawCompass
 $('#windSpd').addEventListener('input',e=>{ windSpd=+e.target.value; drawCompass(); updateETAFromLast(); });
 $('#windNumSpd').addEventListener('input',e=>{ windSpd=+e.target.value; drawCompass(); updateETAFromLast(); });
 drawCompass();
+
+const toggleHudBtn = document.getElementById('toggleWindHud');
+if(toggleHudBtn){
+  toggleHudBtn.addEventListener('click', ()=>{
+    const hud = document.getElementById('windHUD');
+    const on = hud.style.display !== 'none';
+    hud.style.display = on ? 'none' : 'block';
+    toggleHudBtn.classList.toggle('active', !on);
+  });
+}
 
 $('#btnGPS')?.addEventListener('click', async ()=>{
   try{
