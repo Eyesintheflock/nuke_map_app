@@ -32,6 +32,8 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:
 .badge{display:inline-block;padding:2px 6px;border-radius:999px;font-size:12px}
 .b20{background:var(--psi20)} .b5{background:var(--psi5)} .b1{background:var(--psi1)} .bth{background:var(--therm)} .bfo{background:var(--fall)}
 .note{color:var(--muted);font-size:12px}
+.note .src-ok { opacity:.9 }
+.note .src-warn { color:#f59e0b }
 .row{display:flex;align-items:center;gap:8px;margin:6px 0}
 .row input[type="range"]{width:100%;accent-color:var(--accent)}
 .smallbtn{padding:4px 8px;border-radius:8px;border:1px solid #1d2633;background:#0b0e12;color:var(--fg);cursor:pointer}
