@@ -2,62 +2,92 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<title>Nuke Effects • Terrain 3D • Population • Waypoints</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+<title>Nuke Effects – Terrain 3D + Population + Shelter HUD</title>
 
-<link rel="manifest" href="manifest.webmanifest">
-
-<link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet">
+<!-- MapLibre (3D/WebGL) + Leaflet (fallback) -->
+<link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet"/>
 <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
-
-<link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+<!-- Turf for geometry -->
 <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
 
-<link rel="stylesheet" href="styles.css">
+<style>
+:root{
+  --bg:#101114;--panel:#0f1318;--muted:#8a95a7;--fg:#e9eef7;--accent:#22d3ee;
+  --ok:#22c55e;--warn:#f59e0b;--psi20:#6d28d9;--psi5:#3b82f6;--psi1:#22d3ee;--therm:#f97316;--fall:#22c55e;
+}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial}
+#app{display:grid;grid-template-rows:auto 1fr;height:100%}
+#bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px;background:var(--panel);box-shadow:0 2px 0 #0008;z-index:12}
+#bar .label{font-size:12px;opacity:.85;margin-right:4px}
+#bar input,#bar select,#bar button{background:#0b0e12;border:1px solid #1d2633;color:var(--fg);padding:6px 8px;border-radius:10px}
+#bar button{cursor:pointer}
+#mapwrap{position:relative}
+#mlmap,#map{position:absolute;inset:0}
+
+#stack{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:10px;z-index:10;width:min(92vw,320px)}
+.panel{background:#0b0e12dd;border:1px solid #1d2633;border-radius:10px;backdrop-filter:blur(4px)}
+.panel header{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid #1d2633;cursor:pointer}
+.panel .content{padding:8px 10px;display:none}
+.panel.open .content{display:block}
+.badge{display:inline-block;padding:2px 6px;border-radius:999px;font-size:12px}
+.b20{background:var(--psi20)} .b5{background:var(--psi5)} .b1{background:var(--psi1)} .bth{background:var(--therm)} .bfo{background:var(--fall)}
+.note{color:var(--muted);font-size:12px}
+.row{display:flex;align-items:center;gap:8px;margin:6px 0}
+.row input[type="range"]{width:100%;accent-color:var(--accent)}
+.smallbtn{padding:4px 8px;border-radius:8px;border:1px solid #1d2633;background:#0b0e12;color:var(--fg);cursor:pointer}
+.mini-help{font-size:11px;color:#9aa6b2}
+
+#windHUD{position:absolute;left:10px;bottom:10px;z-index:11;background:#0b0e12ee;border:1px solid #1d2633;border-radius:12px;box-shadow:0 2px 8px #0008;min-width:220px}
+#windHead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-bottom:1px solid #1d2633;cursor:move}
+#windBody{display:flex;gap:10px;align-items:center;padding:8px 10px}
+#windCompass{display:block}
+#windResize{position:absolute;right:4px;bottom:4px;width:18px;height:18px;border-right:2px solid #334155;border-bottom:2px solid #334155;border-radius:3px;cursor:nwse-resize}
+#windFoot{display:flex;gap:6px;padding:0 10px 10px 10px;flex-wrap:wrap}
+#windFoot input{width:84px}
+
+.err{position:absolute;left:10px;top:10px;background:#7f1d1d;color:#fff;padding:8px 12px;border-radius:8px;display:none;z-index:20}
+
+/* pin styles */
+.pin-list{max-height:160px;overflow:auto;border:1px solid #1d2633;border-radius:8px;padding:6px}
+.pin-item{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:4px;border-bottom:1px dashed #203040}
+.pin-item:last-child{border-bottom:none}
+.pin-item .meta{font-size:12px;color:#aab4c3}
+.pin-item button{padding:3px 6px}
+.pin-swatch{width:14px;height:14px;border-radius:3px;border:1px solid #1d2633;display:inline-block;vertical-align:middle;margin-right:4px}
+</style>
 </head>
 <body>
 <div id="app">
   <!-- Top control bar -->
   <div id="bar">
-    <div class="grp">
-      <label class="lbl">Burst</label>
-      <select id="preset">
-        <option value="custom">Custom</option>
-        <option value="15">Little Boy (15 kt)</option>
-        <option value="100" selected>W76 (100 kt)</option>
-        <option value="475">W88 (475 kt)</option>
-        <option value="1200">B83 (1.2 Mt)</option>
-        <option value="50000">Tsar Bomba (50 Mt)</option>
-      </select>
-      <label class="lbl">Yield</label><input id="yield" type="number" min="0.1" step="0.1" value="100" class="num sm"><span class="unit">kt</span>
-      <label class="lbl">Alt</label><input id="alt" type="number" step="10" value="0" class="num sm"><span class="unit">m</span>
-      <label class="chk"><input id="fallout" type="checkbox" checked> Fallout</label>
-      <label class="lbl">WX</label>
-      <select id="wx"><option value="dry">Dry</option><option value="rain">Rain</option><option value="snow">Snow</option></select>
-    </div>
-
-    <div class="grp">
-      <label class="lbl">Wind</label>
-<input id="wind" type="number" min="0" max="359" step="1" value="90" class="num sm"><span class="unit">°</span>
-<label class="lbl">Speed</label>
-<input id="windSpd" type="number" min="0" max="60" step="1" value="10" class="num sm"><span class="unit">m/s</span>
-<label class="chk" title="Pull wind from Open-Meteo and keep it fresh">
-  <input id="windLive" type="checkbox"> Live
-</label>
-<button id="windLiveOnce" class="btn ghost" title="Fetch once using GPS (or map center)">Use live now</button>
-<button id="add" class="btn">Add burst (tap map)</button>
-<button id="clear" class="btn ghost">Clear</button>
-<button id="refreshTiles" class="btn ghost">Refresh tiles</button>
-    </div>
-
-    <div class="grp">
-      <label class="lbl">Basemap</label>
-      <select id="basemap"><option value="auto" selected>Auto</option><option value="osm">OSM Streets</option><option value="sat">Satellite (demo)</option><option value="grid">Offline grid</option></select>
-      <button id="goHome" class="btn ghost">Go Home</button>
-      <button id="goWork" class="btn ghost">Go Work</button>
-    </div>
+    <span class="label">Burst:</span>
+    <select id="preset">
+      <option value="custom">Custom</option>
+      <option value="15">Little Boy (15 kt)</option>
+      <option value="100" selected>W76 (100 kt)</option>
+      <option value="475">W88 (475 kt)</option>
+      <option value="1200">B83 (1.2 Mt)</option>
+      <option value="50000">Tsar Bomba (50 Mt)</option>
+    </select>
+    <span class="label">Yield</span><input id="yield" type="number" min="0.1" step="0.1" value="100" style="width:84px">kt
+    <span class="label">Alt</span><input id="alt" type="number" step="10" value="0" style="width:80px">m
+    <label><input id="fallout" type="checkbox" checked> Fallout</label>
+    <span class="label">WX</span>
+    <select id="wx"><option value="dry">Dry</option><option value="rain">Rain</option><option value="snow">Snow</option></select>
+    <span class="label">Wind</span>
+    <input id="wind" type="number" min="0" max="359" step="1" value="90" style="width:70px">°
+    <span class="label">Speed</span>
+    <input id="windSpd" type="number" min="0" max="60" step="1" value="10" style="width:70px">m/s
+    <button id="add">Add burst (tap map)</button>
+    <button id="pinMode">Add pin (tap map)</button>
+    <button id="clear">Clear</button>
+    <button id="refreshTiles">Refresh tiles</button>
+    <span class="label">Basemap</span>
+    <select id="basemap"><option value="auto" selected>Auto</option><option value="osm">OSM Streets</option><option value="sat">Satellite (demo)</option><option value="grid">Offline grid</option></select>
   </div>
 
   <!-- Map stack -->
@@ -75,7 +105,7 @@
           <div class="row"><span class="badge b1">1 psi</span> light damage</div>
           <div class="row"><span class="badge bth">Thermal 3rd°</span> burns</div>
           <div class="row"><span class="badge bfo">Fallout</span> dose plume</div>
-          <div class="note">Tap any ring/plume for text, area, & population.</div>
+          <div class="note">Tap any ring/plume for text and population.</div>
         </div>
       </div>
 
@@ -90,7 +120,7 @@
             <label><input id="terrainOn" type="checkbox" checked> Terrain (3D)</label>
             <label><input id="hillshadeOn" type="checkbox" checked> Hillshade</label>
           </div>
-          <div class="row">Exaggeration <input id="exagg" type="range" min="1" max="3" step="0.1" value="1.4"><span id="exVal" class="rval">1.4</span></div>
+          <div class="row">Exaggeration <input id="exagg" type="range" min="1" max="3" step="0.1" value="1.4"><span id="exVal" style="width:36px;text-align:right">1.4</span></div>
           <div class="note">Tilt with two fingers. Turn off terrain if device is slow.</div>
         </div>
       </div>
@@ -99,113 +129,524 @@
         <header><div>Overlays / Population</div><div>▾</div></header>
         <div class="content">
           <div class="row"><label><input id="popHeat" type="checkbox"> Population heat (county)</label></div>
-          <div class="row">Precip <input id="precip" type="range" min="0" max="100" value="20"><span id="precipVal" class="rval">20</span></div>
-          <div class="row">Humidity <input id="humid" type="range" min="0" max="100" value="40"><span id="humidVal" class="rval">40</span></div>
-
-          <div class="row">
-            <label class="lbl">Risk paint</label>
-            <select id="riskLevel">
-              <option value="">Off</option>
-              <option value="1">Low</option>
-              <option value="2">Med</option>
-              <option value="3">High</option>
-            </select>
-            <button id="riskClear" class="smallbtn">Clear risk</button>
-          </div>
-
+          <div class="row">Precip intensity <input id="precip" type="range" min="0" max="100" value="20"><span id="precipVal" style="width:36px;text-align:right">20</span></div>
+          <div class="row">Humidity <input id="humid" type="range" min="0" max="100" value="40"><span id="humidVal" style="width:36px;text-align:right">40</span></div>
           <div id="popRead" class="note">Population in current effects: —</div>
           <button class="smallbtn" id="calcPop">Recalc population</button>
         </div>
       </div>
 
       <div class="panel" id="pShelter">
-        <header><div>Shelter Finder (terrain-aware) <span class="mini-help" title="Green = better (leeward/lower); Orange = worse (ridge/downwind).">?</span></div><div>▾</div></header>
+        <header><div>Shelter Finder (terrain-aware)</div><div>▾</div></header>
         <div class="content">
           <div class="row">
-            <button class="smallbtn" id="btnGPS">My Position</button>
+            <button class="smallbtn" id="btnGPS">My Position (GPS)</button>
             <select id="radius">
               <option value="250">250 m</option>
               <option value="500" selected>500 m</option>
               <option value="1000">1 km</option>
               <option value="1500">1.5 km</option>
             </select>
+          </div>
+          <div class="row">
             <button class="smallbtn" id="findShelter">Suggest</button>
             <button class="smallbtn" id="clearShelter">Clear</button>
           </div>
-          <div class="note">Dots: <span class="dot g"></span> better / <span class="dot o"></span> avoid.</div>
+          <div class="note">Dots: <span class="mini-help" style="color:#22c55e">green</span> better (leeward/lower); <span class="mini-help" style="color:#f59e0b">orange</span> avoid.</div>
           <div id="shelterRead" class="note">—</div>
         </div>
       </div>
 
+      <!-- Pins / Waypoints -->
       <div class="panel" id="pPins">
-        <header><div>Waypoints & Timers</div><div>▾</div></header>
+        <header><div>Pins / Waypoints</div><div>▾</div></header>
         <div class="content">
-          <div class="row">
-            <label class="lbl">Mode</label>
+          <div class="row" style="gap:6px;flex-wrap:wrap">
             <select id="pinType">
+              <option value="custom" selected>Custom</option>
               <option value="home">Home</option>
               <option value="work">Work</option>
               <option value="cache">Cache</option>
-              <option value="family">Family/Friends</option>
+              <option value="friend">Family/Friend</option>
               <option value="checkpoint">Checkpoint</option>
-              <option value="op">OP/LP</option>
-              <option value="shelter">Shelter (0–10)</option>
-              <option value="threat">Threat (militant)</option>
-              <option value="poi" selected>Generic</option>
+              <option value="op">Observation Post</option>
+              <option value="shelter">Shelter</option>
+              <option value="threat">Threat/Militant</option>
             </select>
-            <input id="pinLabel" class="num" placeholder="Label">
-            <input id="pinScore" class="num xs" type="number" min="0" max="10" step="1" value="5" title="Shelter score when 'Shelter' type">
-            <button id="pinAdd" class="smallbtn">Add pin (tap map)</button>
-            <button id="pinList" class="smallbtn">List</button>
+            <input id="pinColor" type="color" value="#22c55e" title="Pin color">
+            <button class="smallbtn" id="pinAddNow">Drop at map center</button>
+            <button class="smallbtn" id="pinClearAll">Clear pins</button>
           </div>
+          <div class="note">Tip: turn on “Add pin (tap map)”, then tap the map. Drag a pin to move it. Tap a pin to edit.</div>
+          <div class="pin-list" id="pinList"><div class="note">No pins yet.</div></div>
+        </div>
+      </div>
+
+      <!-- Waypoints & Timers -->
+      <div class="panel" id="pWT">
+        <header><div>Waypoints & Timers</div><div>▾</div></header>
+        <div class="content">
           <div class="row">
-            <button id="homeCenter" class="smallbtn">Home = Center</button>
-            <button id="workCenter" class="smallbtn">Work = Center</button>
+            <button id="homeCenter" class="smallbtn">Home → Center</button>
+            <button id="workCenter" class="smallbtn">Work → Center</button>
             <button id="goSelected" class="smallbtn">Center on selected</button>
           </div>
-
           <div class="row">
             <label class="lbl">Adversary ETA</label>
-            <input id="advMins" class="num xs" type="number" min="1" step="1" value="60"><span class="unit">min</span>
+            <input id="advWins" class="num xs" type="number" min="1" step="1" value="60"><span class="note"> min window</span>
             <button id="advStart" class="smallbtn">Start</button>
             <button id="advStop" class="smallbtn">Stop</button>
-            <div id="advShow" class="note">—</div>
           </div>
+          <div id="advShow" class="note">—</div>
         </div>
       </div>
     </div>
 
     <!-- Wind HUD -->
-<div id="windHUD">
-  <div id="windHead">
-    <div class="title">Wind / Fallout Timing</div>
-    <div id="windRead" class="note">90° (E), 10 m/s</div>
-  </div>
-
-  <div id="windBody">
-    <canvas id="windCompass" width="120" height="120"></canvas>
-    <div>
-      <div class="note">Drag arrow • 0–359°</div>
-      <div id="hudEta" class="eta">ETA to you: —</div>
-      <div id="hudLeave" class="note">Leave-shelter est: —</div>
-      <div id="windSrc" class="note">—</div>
+    <div id="windHUD">
+      <div id="windHead"><div class="title">Wind / Fallout Timing</div><div id="windRead" class="note">90° (E), 10 m/s</div></div>
+      <div id="windBody">
+        <canvas id="windCompass" width="120" height="120"></canvas>
+        <div>
+          <div class="note">Drag arrow • 0–359°</div>
+          <div id="hudEta" class="eta">ETA to you: —</div>
+          <div id="hudLeave" class="note">Leave-shelter est: —</div>
+          <div id="windSrc" class="note">—</div>
+        </div>
+      </div>
+      <div id="windFoot">
+        <input id="windNum" type="number" min="0" max="359" step="1" value="90">
+        <input id="windNumSpd" type="number" min="0" max="60" step="1" value="10">
+        <button id="windCenter" class="smallbtn">Reset pos</button>
+        <button id="windHide" class="smallbtn">Hide</button>
+      </div>
+      <div id="windResize" title="Resize"></div>
     </div>
-  </div>
-
-  <div id="windFoot">
-    <input id="windNum" type="number" min="0" max="359" step="1" value="90">
-    <input id="windNumSpd" type="number" min="0" max="60" step="1" value="10">
-    <button id="windCenter" class="smallbtn">Reset pos</button>
-    <button id="windHide" class="smallbtn">Hide</button>
-  </div>
-
-  <div id="windResize" title="Resize"></div>
-</div>
 
     <div id="err" class="err"></div>
   </div>
 </div>
 
+<!-- Tiny county demo; replace with counties.json for full coverage if you want -->
+<script id="countiesData" type="application/json">
+{
+  "type":"FeatureCollection",
+  "features":[
+    {"type":"Feature","properties":{"name":"Columbia, OR","pop":52800},"geometry":{"type":"Polygon","coordinates":[[[-123.42,45.95],[-123.42,45.55],[-122.65,45.55],[-122.65,46.20],[-123.42,45.95]]]}},
+    {"type":"Feature","properties":{"name":"Clatsop, OR","pop":41100},"geometry":{"type":"Polygon","coordinates":[[[-124.10,46.30],[-124.10,45.80],[-123.50,45.80],[-123.50,46.30],[-124.10,46.30]]]}},
+    {"type":"Feature","properties":{"name":"Cowlitz, WA","pop":111000},"geometry":{"type":"Polygon","coordinates":[[[-123.30,46.60],[-123.30,46.00],[-122.48,46.00],[-122.48,46.60],[-123.30,46.60]]]}},
+    {"type":"Feature","properties":{"name":"Clark, WA","pop":503000},"geometry":{"type":"Polygon","coordinates":[[[-123.30,45.90],[-123.30,45.50],[-122.20,45.50],[-122.20,45.90],[-123.30,45.90]]]}},
+    {"type":"Feature","properties":{"name":"Multnomah, OR","pop":815000},"geometry":{"type":"Polygon","coordinates":[[[-122.95,45.70],[-122.95,45.40],[-122.25,45.40],[-122.25,45.70],[-122.95,45.70]]]}},
+    {"type":"Feature","properties":{"name":"Washington, OR","pop":606000},"geometry":{"type":"Polygon","coordinates":[[[-123.40,45.80],[-123.40,45.30],[-122.70,45.30],[-122.70,45.80],[-123.40,45.80]]]}},
+    {"type":"Feature","properties":{"name":"Tillamook, OR","pop":27300},"geometry":{"type":"Polygon","coordinates":[[[-123.95,45.75],[-123.95,45.20],[-123.40,45.20],[-123.40,45.75],[-123.95,45.75]]]}},
+    {"type":"Feature","properties":{"name":"Yamhill, OR","pop":110000},"geometry":{"type":"Polygon","coordinates":[[[-123.50,45.60],[-123.50,45.10],[-122.95,45.10],[-122.95,45.60],[-123.50,45.60]]]}},
+    {"type":"Feature","properties":{"name":"Polk, OR","pop":91000},"geometry":{"type":"Polygon","coordinates":[[[-123.65,45.20],[-123.65,44.70],[-122.95,44.70],[-122.95,45.20],[-123.65,45.20]]]}},
+    {"type":"Feature","properties":{"name":"Marion, OR","pop":353000},"geometry":{"type":"Polygon","coordinates":[[[-123.25,45.10],[-123.25,44.50],[-122.25,44.50],[-122.25,45.10],[-123.25,45.10]]]}},
+    {"type":"Feature","properties":{"name":"Lincoln, OR","pop":51000},"geometry":{"type":"Polygon","coordinates":[[[-124.30,45.10],[-124.30,44.40],[-123.75,44.40],[-123.75,45.10],[-124.30,45.10]]]}},
+    {"type":"Feature","properties":{"name":"Benton, OR","pop":96000},"geometry":{"type":"Polygon","coordinates":[[[-123.60,44.80],[-123.60,44.30],[-123.05,44.30],[-123.05,44.80],[-123.60,44.80]]]}},
+    {"type":"Feature","properties":{"name":"Pacific, WA","pop":23000},"geometry":{"type":"Polygon","coordinates":[[[-124.10,46.80],[-124.10,46.30],[-123.50,46.30],[-123.50,46.80],[-124.10,46.80]]]}},
+    {"type":"Feature","properties":{"name":"Wahkiakum, WA","pop":4500},"geometry":{"type":"Polygon","coordinates":[[[-123.60,46.45],[-123.60,46.20],[-123.20,46.20],[-123.20,46.45],[-123.60,46.45]]]} }
+  ]
+}
+</script>
+
+<script>
+/* ===== helpers ===== */
+const $=s=>document.querySelector(s);
+const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const bearingToCardinal=b=>['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(((b%360)+360)%360/22.5)%16];
+const getCSS=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+function lsGet(k,def){ try{const v=localStorage.getItem(k); return v?JSON.parse(v):def;}catch{return def} }
+function lsSet(k,v){ try{localStorage.setItem(k,JSON.stringify(v));}catch{} }
+const showErr=msg=>{ const e=$('#err'); e.textContent=msg; e.style.display='block'; setTimeout(()=>e.style.display='none',4000); };
+
+/* ===== map init (MapLibre w/ Leaflet fallback) ===== */
+let useML=false, mlmap, lmap, addMode=false;
+let windDeg=lsGet('windDeg',90), windSpd=lsGet('windSpd',10);
+let effects=[], myPos=null, popHeatLayer=null, shelterMarkers=[], lastBurst=null, counties=null;
+
+function getFlag(name){ return new URLSearchParams(location.search).has(name); }
+function webglOk(){ try{ if(getFlag('leaf')) return false; const c=document.createElement('canvas'); return !!(window.WebGLRenderingContext&&(c.getContext('webgl')||c.getContext('experimental-webgl')));}catch{return false} }
+
+function initMap(){
+  const start=[45.85,-123.49];
+  if(webglOk()){
+    useML=true; $('#map').style.display='none';
+    mlmap=new maplibregl.Map({
+      container:'mlmap',
+      style:{
+        "version":8,
+        "sources":{
+          "osm":{"type":"raster","tiles":["https://a.tile.openstreetmap.org/{z}/{x}/{y}.png","https://b.tile.openstreetmap.org/{z}/{x}/{y}.png","https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"],"tileSize":256,"attribution":"© OSM"},
+          "sat":{"type":"raster","tiles":["https://tiles.stadiamaps.com/tiles/alidade_satellite/{z}/{x}/{y}.jpg"],"tileSize":256,"attribution":"Satellite demo"},
+          "terrain-dem":{"type":"raster-dem","tiles":["https://demotiles.maplibre.org/terrain-tiles/{z}/{x}/{y}.png"],"tileSize":256}
+        },
+        "layers":[
+          {"id":"baseraster","type":"raster","source":"osm","minzoom":0,"maxzoom":19},
+          {"id":"hillshade","type":"hillshade","source":"terrain-dem","layout":{"visibility":"visible"},"paint":{"hillshade-exaggeration":0.6}}
+        ]
+      },
+      center:[start[1],start[0]], zoom:8.6, pitch:0
+    });
+    mlmap.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-left');
+    mlmap.addControl(new maplibregl.ScaleControl({maxWidth:120,unit:'imperial'}));
+    mlmap.on('click', e=>{
+      if(pinsHandleMapClick(e.lngLat.lat,e.lngLat.lng)) return;
+      if(addMode){ placeBurst([e.lngLat.lat,e.lngLat.lng]); addMode=false; $('#add').classList.remove('active'); }
+    });
+  }else{
+    useML=false; $('#mlmap').style.display='none';
+    lmap=L.map('map').setView(start,9);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(lmap);
+    L.tileLayer('https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',{opacity:0.5}).addTo(lmap);
+    lmap.on('click', e=>{
+      if(pinsHandleMapClick(e.latlng.lat,e.latlng.lng)) return;
+      if(addMode){ placeBurst([e.latlng.lat,e.latlng.lng]); addMode=false; $('#add').classList.remove('active'); }
+    });
+  }
+}
+initMap();
+
+/* ===== UI wiring (top bar & panels) ===== */
+for(const h of document.querySelectorAll('.panel header')){ h.addEventListener('click',()=>h.parentElement.classList.toggle('open')); }
+
+$('#preset').onchange=e=>{ if(e.target.value!=='custom') $('#yield').value=e.target.value; };
+$('#add').onclick=()=>{ addMode=!addMode; $('#add').classList.toggle('active',addMode); if(addMode){ pinMode=false; $('#pinMode').classList.remove('active'); } };
+$('#clear').onclick=()=>clearMap();
+$('#refreshTiles').onclick=refreshTiles; $('#btnRefresh2').onclick=refreshTiles;
+$('#bmSel').onchange=e=>{ $('#basemap').value=e.target.value; refreshTiles(); };
+$('#basemap').onchange=refreshTiles;
+$('#precip').oninput=e=>$('#precipVal').textContent=e.target.value;
+$('#humid').oninput=e=>$('#humidVal').textContent=e.target.value;
+$('#calcPop').onclick=calcPopulation;
+
+$('#terrainOn').onchange=()=>toggleTerrain();
+$('#hillshadeOn').onchange=()=>toggleHillshade();
+$('#exagg').oninput=e=>{ $('#exVal').textContent=e.target.value; setExaggeration(+e.target.value); };
+
+function refreshTiles(){
+  if(useML){
+    const sel=$('#basemap').value;
+    const src = sel==='sat'?'sat':'osm';
+    try{ if(mlmap.getLayer('baseraster')) mlmap.removeLayer('baseraster'); }catch{}
+    mlmap.addLayer({"id":"baseraster","type":"raster","source":src,"minzoom":0,"maxzoom":19}, 'hillshade');
+  }else{
+    lmap.eachLayer(l=>{ if(l._url) l.remove(); });
+    const sel=$('#basemap').value;
+    if(sel==='sat'){ L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_satellite/{z}/{x}/{y}.jpg',{maxZoom:18}).addTo(lmap); }
+    else{ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(lmap); }
+    L.tileLayer('https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',{opacity:0.5}).addTo(lmap);
+  }
+}
+function toggleTerrain(){ if(useML) mlmap.setTerrain($('#terrainOn').checked?{source:'terrain-dem',exaggeration:+$('#exagg').value}:null); }
+function toggleHillshade(){ if(useML) try{ mlmap.setLayoutProperty('hillshade','visibility',$('#hillshadeOn').checked?'visible':'none'); }catch{} }
+function setExaggeration(x){ if(useML) try{ mlmap.setTerrain({source:'terrain-dem',exaggeration:x}); }catch{} }
+
+/* ===== effects model ===== */
+function ringKm(y,psi){ const W=Math.cbrt(Math.max(0.1,y)); if(psi===20) return 0.9*W; if(psi===5) return 1.9*W; if(psi===1) return 4.2*W; return 0; }
+function thermalKm(y){ return 7.0*Math.cbrt(Math.max(0.1,y)); }
+function plumeParams(y, wx, alt, precipPct, humidPct){
+  const base=Math.sqrt(Math.max(0.1,y)); let len=25*base, width=6*base;
+  if(wx==='rain'){ len*=0.82; width*=0.72; } if(wx==='snow'){ len*=0.90; width*=0.80; }
+  const p = clamp(precipPct/100,0,1); len *= (1-0.25*p); width *= (1-0.25*p);
+  const h = clamp(humidPct/100,0,1); len *= (1-0.1*h);
+  if(alt>300){ len*=0.6; width*=0.6; }
+  return {len,width};
+}
+function offsetOnEarth(lat,lng, fwdM, brgDeg, rightM){
+  const R=6371000, b=toRad(brgDeg), d=fwdM/R, lat1=toRad(lat), lon1=toRad(lng);
+  const lat2=Math.asin(Math.sin(lat1)*Math.cos(d)+Math.cos(lat1)*Math.sin(d)*Math.cos(b));
+  const lon2=lon1+Math.atan2(Math.sin(b)*Math.sin(d)*Math.cos(lat1),Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
+  const b2=b+Math.PI/2, d2=rightM/R;
+  const lat3=Math.asin(Math.sin(lat2)*Math.cos(d2)+Math.cos(lat2)*Math.sin(d2)*Math.cos(b2));
+  const lon3=lon2+Math.atan2(Math.sin(b2)*Math.sin(d2)*Math.cos(lat2),Math.cos(d2)-Math.sin(lat2)*Math.sin(lat3));
+  return [toDeg(lat3),toDeg(lon3)];
+}
+function plumeGJ(center, brgDeg, lenKm, widthKm){
+  const [lng0,lat0]=center, coords=[], N=120, lenM=lenKm*1000, halfW=widthKm*500;
+  for(let i=0;i<=N;i++){ const t=i/N, dist=t*lenM, w=Math.sin(Math.PI*Math.min(1,t))*halfW; coords.push(offsetOnEarth(lat0,lng0,dist,brgDeg, w).reverse()); }
+  for(let i=N;i>=0;i--){ const t=i/N, dist=t*lenM, w=Math.sin(Math.PI*Math.min(1,t))*halfW; coords.push(offsetOnEarth(lat0,lng0,dist,brgDeg,-w).reverse()); }
+  return turf.polygon([coords]);
+}
+
+/* ===== drawing helpers ===== */
+let layersML=[], layersLF=[];
+function addFill(gj,id,color,fop,line=true){
+  if(useML){
+    mlmap.addSource(id,{type:'geojson',data:gj});
+    mlmap.addLayer({id, type:'fill', source:id, paint:{'fill-color':color,'fill-opacity':fop}});
+    if(line) mlmap.addLayer({id:id+'l', type:'line', source:id, paint:{'line-color':color,'line-width':2,'line-opacity':0.9}});
+    layersML.push(id);
+  }else{
+    const lay=L.geoJSON(gj,{style:{color,weight:2,fillColor:color,fillOpacity:fop}}).addTo(lmap);
+    layersLF.push(lay);
+  }
+}
+function addMarker(lat,lng,opts={}){
+  if(useML){
+    const m = new maplibregl.Marker(opts).setLngLat([lng,lat]).addTo(mlmap);
+    return {remove:()=>m.remove(), _m:m, setLngLat:(p)=>m.setLngLat([p[1],p[0]]), on:(ev,fn)=>m.getElement().addEventListener(ev,fn)};
+  }else{
+    const m=L.marker([lat,lng],opts).addTo(lmap);
+    return {remove:()=>lmap.removeLayer(m), _m:m, setLngLat:(p)=>m.setLatLng(p), on:(ev,fn)=>m.on(ev,fn)};
+  }
+}
+function flyTo(lat,lng){ if(useML) mlmap.flyTo({center:[lng,lat], zoom:12}); else lmap.setView([lat,lng],12); }
+function clearMap(){
+  effects=[]; if(useML){ layersML.forEach(id=>{ try{ mlmap.removeLayer(id+'l'); }catch{} try{ mlmap.removeLayer(id); }catch{} try{ mlmap.removeSource(id);}catch{} }); layersML=[]; }
+  else{ layersLF.forEach(l=>{ try{ l.remove(); }catch{} }); layersLF=[]; }
+  if(popHeatLayer){ if(useML){ try{ mlmap.removeLayer('popHeat'); mlmap.removeSource('popHeat'); }catch{} } else { try{ lmap.removeLayer(popHeatLayer);}catch{} } popHeatLayer=null; }
+  shelterMarkers.forEach(m=>m.remove && m.remove()); shelterMarkers=[];
+  $('#popRead').textContent='Population in current effects: —';
+  $('#shelterRead').textContent='—';
+}
+
+/* ===== bursts ===== */
+function placeBurst(latlng){
+  lastBurst=latlng; const [lat,lng]=latlng;
+  const y=+$('#yield').value, a=+$('#alt').value, wx=$('#wx').value;
+  const precip=+$('#precip').value, humid=+$('#humid').value;
+  addMarker(lat,lng);
+  const r20=turf.circle([lng,lat], ringKm(y,20), {steps:128});
+  const r5 =turf.circle([lng,lat], ringKm(y,5), {steps:128});
+  const r1 =turf.circle([lng,lat], ringKm(y,1), {steps:128});
+  const th =turf.circle([lng,lat], thermalKm(y), {steps:128});
+  addFill(r20,'r20_'+Math.random(), getCSS('--psi20'), .28);
+  addFill(r5 ,'r5_' +Math.random(), getCSS('--psi5') , .25);
+  addFill(r1 ,'r1_' +Math.random(), getCSS('--psi1') , .22);
+  addFill(th ,'rT_' +Math.random(), getCSS('--therm'), .15);
+  if($('#fallout').checked){
+    const p=plumeParams(y,wx,a,precip,humid);
+    const plume=plumeGJ([lng,lat], windDeg, p.len, p.width);
+    addFill(plume,'pl_'+Math.random(), getCSS('--fall'), .22,false);
+    effects.push({gj:plume,label:'Fallout plume'});
+  }
+  effects.push({gj:r20,label:'20 psi'}); effects.push({gj:r5,label:'5 psi'}); effects.push({gj:r1,label:'1 psi'}); effects.push({gj:th,label:'Thermal 3rd°'});
+  calcPopulation(); if(myPos) updateETA([lat,lng], windDeg);
+}
+
+/* ===== population ===== */
+async function loadCounties(){
+  try{ const r=await fetch('counties.json',{cache:'no-store'}); if(r.ok){ counties=await r.json(); return; } }catch{}
+  counties = JSON.parse(document.getElementById('countiesData').textContent);
+}
+loadCounties();
+
+$('#popHeat').onchange=()=>{
+  if(!counties){ alert('Counties still loading'); $('#popHeat').checked=false; return; }
+  if($('#popHeat').checked){
+    if(useML){
+      mlmap.addSource('popHeat',{type:'geojson',data:counties});
+      mlmap.addLayer({id:'popHeat',type:'fill',source:'popHeat',
+        paint:{'fill-color':['interpolate',['linear'],['get','pop'],0,'#0f172a',50000,'#475569',300000,'#ef4444'],'fill-opacity':0.25}});
+    }else{
+      popHeatLayer = L.geoJSON(counties,{style:f=>({color:'#444',weight:1,fillColor: f.properties.pop>300000?'#ef4444':(f.properties.pop>100000?'#f59e0b':'#475569'),fillOpacity:0.25})}).addTo(lmap);
+    }
+  }else{
+    if(useML){ try{ mlmap.removeLayer('popHeat'); mlmap.removeSource('popHeat'); }catch{} }
+    else{ try{ lmap.removeLayer(popHeatLayer);}catch{} popHeatLayer=null; }
+  }
+};
+async function calcPopulation(){
+  if(!counties){ $('#popRead').textContent='Population: (loading counties…)'; return; }
+  if(effects.length===0){ $('#popRead').textContent='Population in current effects: —'; return; }
+  let union = effects[0].gj;
+  for(let i=1;i<effects.length;i++){ try{ union = turf.union(union, effects[i].gj); }catch{} }
+  let total=0, details=[];
+  counties.features.forEach(c=>{
+    try{
+      const inter = turf.intersect(union, c);
+      if(inter){
+        const frac = turf.area(inter) / turf.area(c);
+        const ppl = Math.round(c.properties.pop * frac);
+        total += ppl;
+        details.push(`${c.properties.name}: ${ppl.toLocaleString()}`);
+      }
+    }catch{}
+  });
+  $('#popRead').textContent = `Population in effects: ${total.toLocaleString()}` + (details.length? ` — ${details.join(' • ')}`:'');
+}
+
+/* ===== wind HUD + ETA ===== */
+const HUD=$('#windHUD'), Hhead=$('#windHead'), Hrez=$('#windResize');
+(function(){
+  const s=lsGet('HUDpos',{left:'10px',bottom:'10px',w:300,h:210});
+  HUD.style.left=s.left; HUD.style.bottom=s.bottom||'10px'; HUD.style.width=s.w+'px'; HUD.style.height=s.h+'px';
+  let drag=false,sx=0,sy=0,ox=0,oy=0;
+  Hhead.addEventListener('pointerdown',ev=>{drag=true;sx=ev.clientX;sy=ev.clientY; const r=HUD.getBoundingClientRect(); ox=r.left; oy=r.top; Hhead.setPointerCapture(ev.pointerId);});
+  Hhead.addEventListener('pointermove',ev=>{if(!drag)return; const dx=ev.clientX-sx, dy=ev.clientY-sy; HUD.style.left=(ox+dx)+'px'; HUD.style.top=(oy+dy)+'px'; HUD.style.bottom='auto';});
+  Hhead.addEventListener('pointerup',()=>{drag=false; save();});
+  let rez=false, rsx=0,rsy=0,rw=0,rh=0;
+  Hrez.addEventListener('pointerdown',ev=>{rez=true;rsx=ev.clientX;rsy=ev.clientY; const r=HUD.getBoundingClientRect(); rw=r.width; rh=r.height; Hrez.setPointerCapture(ev.pointerId);});
+  Hrez.addEventListener('pointermove',ev=>{ if(!rez)return; const dx=ev.clientX-rsx, dy=ev.clientY-rsy; HUD.style.width=Math.max(220,rw+dx)+'px'; HUD.style.height=Math.max(160,rh+dy)+'px'; });
+  Hrez.addEventListener('pointerup',()=>{rez=false; save();});
+  function save(){ const r=HUD.getBoundingClientRect(); lsSet('HUDpos',{left:HUD.style.left||r.left+'px',bottom:HUD.style.bottom||'10px',w:r.width,h:r.height}); }
+  $('#windCenter').onclick=()=>{ HUD.style.left='10px'; HUD.style.bottom='10px'; HUD.style.top='auto'; save(); };
+  $('#windHide').onclick=()=>{ HUD.style.display='none'; };
+})();
+const comp=$('#windCompass'), ctx=comp.getContext('2d');
+function drawCompass(){
+  const w=comp.width, h=comp.height, r=Math.min(w,h)/2-8, cx=w/2, cy=h/2;
+  ctx.clearRect(0,0,w,h);
+  ctx.save(); ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fillStyle='#0b0e12'; ctx.fill(); ctx.lineWidth=2; ctx.strokeStyle='#1d2633'; ctx.stroke();
+  ctx.translate(cx,cy);
+  for(let i=0;i<36;i++){ ctx.save(); ctx.rotate(i*10*Math.PI/180); ctx.beginPath(); ctx.moveTo(0,-r+4); ctx.lineTo(0,-r+(i%9===0?14:8)); ctx.strokeStyle=i%9===0?'#fff':'#586275'; ctx.lineWidth=i%9===0?2:1; ctx.stroke(); ctx.restore(); }
+  ctx.save(); ctx.rotate(toRad(windDeg)); ctx.beginPath(); ctx.moveTo(0,10); ctx.lineTo(0,-r+16); ctx.strokeStyle='#22d3ee'; ctx.lineWidth=4; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0,-r+16); ctx.lineTo(7,-r+34); ctx.lineTo(-7,-r+34); ctx.closePath(); ctx.fillStyle='#22d3ee'; ctx.fill(); ctx.restore(); ctx.restore();
+  $('#windRead').textContent = `${Math.round(windDeg)}° (${bearingToCardinal(windDeg)}), ${windSpd} m/s`;
+  $('#wind').value=Math.round(windDeg); $('#windNum').value=Math.round(windDeg);
+  $('#windSpd').value=windSpd; $('#windNumSpd').value=windSpd;
+  lsSet('windDeg',windDeg); lsSet('windSpd',windSpd);
+}
+function compDrag(ev){
+  const rect=comp.getBoundingClientRect();
+  const x=ev.clientX-rect.left-rect.width/2, y=ev.clientY-rect.top-rect.height/2;
+  windDeg=(toDeg(Math.atan2(x,-y))+360)%360; drawCompass(); updateETAFromLast();
+}
+comp.addEventListener('pointerdown',ev=>{compDrag(ev); comp.setPointerCapture(ev.pointerId);});
+comp.addEventListener('pointermove',ev=>{ if(ev.buttons) compDrag(ev);});
+$('#wind').addEventListener('input',e=>{ windDeg=+e.target.value; drawCompass(); updateETAFromLast(); });
+$('#windNum').addEventListener('input',e=>{ windDeg=+e.target.value; drawCompass(); updateETAFromLast(); });
+$('#windSpd').addEventListener('input',e=>{ windSpd=+e.target.value; drawCompass(); updateETAFromLast(); });
+$('#windNumSpd').addEventListener('input',e=>{ windSpd=+e.target.value; drawCompass(); updateETAFromLast(); });
+drawCompass();
+
+$('#btnGPS').onclick=async ()=>{
+  try{
+    const pos = await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(p=>res(p),e=>rej(e),{enableHighAccuracy:true,timeout:10000}));
+    myPos=[pos.coords.latitude,pos.coords.longitude];
+    addMarker(myPos[0],myPos[1],{color:'#22c55e'});
+    updateETAFromLast();
+  }catch{ showErr('GPS failed (permissions or no fix)'); }
+};
+function updateETAFromLast(){ if(lastBurst && myPos) updateETA(lastBurst, windDeg); }
+function updateETA(burstLatLng, brgDeg){
+  const [bLat,bLng]=burstLatLng; if(!myPos) return;
+  const [uLat,uLng]=myPos;
+  const dest = offsetOnEarth(bLat,bLng, 1000000, brgDeg, 0);
+  const line = turf.lineString([[bLng,bLat],[dest[1],dest[0]]]);
+  const pt = turf.point([uLng,uLat]);
+  const snapped = turf.nearestPointOnLine(line, pt);
+  const distKm = snapped.properties.location * 111.32;
+  if(windSpd<=0){ $('#hudEta').textContent='ETA to you: wind=0'; return; }
+  const mins = Math.max(0, Math.round((distKm*1000)/windSpd/60));
+  $('#hudEta').textContent = `ETA to you: ${mins} min`;
+  $('#hudLeave').textContent = `Leave-shelter est: ~${mins+420} min (rule-of-7/10)`;
+}
+
+/* ===== shelter (terrain-aware sampling) ===== */
+async function getElevation(lat,lng){ if(!useML) return null; try{ return mlmap.queryTerrainElevation({lng,lat}); }catch{ return null; } }
+function dotMarker(lat,lng,ok=true){
+  if(useML){
+    const el=document.createElement('div'); el.style.width='10px'; el.style.height='10px'; el.style.borderRadius='50%';
+    el.style.border='2px solid #0f172a'; el.style.background= ok?'#22c55e':'#f59e0b';
+    return new maplibregl.Marker({element:el}).setLngLat([lng,lat]).addTo(mlmap);
+  }else{
+    const c= ok?'#22c55e':'#f59e0b'; return L.circleMarker([lat,lng],{radius:6,color:'#0f172a',fillColor:c,fillOpacity:1,weight:2}).addTo(lmap);
+  }
+}
+function clearShelters(){ shelterMarkers.forEach(m=>m.remove && m.remove()); shelterMarkers=[]; $('#shelterRead').textContent='—'; }
+$('#clearShelter').onclick=clearShelters;
+$('#findShelter').onclick=async ()=>{
+  if(!myPos){ alert('Tap “My Position (GPS)” first.'); return; }
+  clearShelters();
+  const R=+$('#radius').value; const samples=36;
+  let best=null, bestScore=-1;
+  const centerEl = await getElevation(myPos[0],myPos[1]);
+  for(let i=0;i<samples;i++){
+    const brg=i*360/samples; const pt=offsetOnEarth(myPos[0],myPos[1], R, brg, 0); const lat=pt[0], lng=pt[1];
+    const el = await getElevation(lat,lng);
+    let score=0, why=[];
+    if(centerEl!=null && el!=null){ const delta = el-centerEl; if(delta<-3){ score+=2; why.push('lower ground'); } if(delta>4){ score-=1; why.push('ridge'); } }
+    const rel = Math.abs((((brg - windDeg + 540)%360)-180));
+    if(rel<100){ score+=2; why.push('leeward'); }
+    if(rel<15){ score-=2; why.push('downwind centerline'); }
+    const m = dotMarker(lat,lng,score>=2); shelterMarkers.push(m);
+    if(score>bestScore){ bestScore=score; best={lat,lng,why}; }
+  }
+  $('#shelterRead').textContent = best?(`Best nearby: ${best.lat.toFixed(5)}, ${best.lng.toFixed(5)} — ${best.why.join(', ')}`):('No strong terrain advantage; use hard cover and cross-wind routes.');
+};
+
+/* ===== pins system ===== */
+let pinMode=false, pins=[], pinIdCounter=1, pinsSelectedId=null;
+$('#pinMode').onclick=()=>{ pinMode=!pinMode; $('#pinMode').classList.toggle('active',pinMode); if(pinMode){ addMode=false; $('#add').classList.remove('active'); } };
+$('#pinAddNow').onclick=()=>{ const c = getMapCenter(); addPin(c.lat,c.lng); };
+$('#pinClearAll').onclick=()=>{ pins.forEach(p=>p.marker.remove()); pins=[]; renderPinList(); };
+$('#homeCenter').onclick=()=>centerOnPinType('home');
+$('#workCenter').onclick=()=>centerOnPinType('work');
+$('#goSelected').onclick = ()=>{ const p=pins.find(x=>x.id===pinsSelectedId); if(!p) return alert('Select a pin in the list first.'); flyTo(p.lat,p.lng); };
+
+function getMapCenter(){ if(useML){ const c=mlmap.getCenter(); return {lat:c.lat,lng:c.lng}; } else { const c=lmap.getCenter(); return {lat:c.lat,lng:c.lng}; } }
+
+function pinsHandleMapClick(lat,lng){
+  if(!pinMode) return false;
+  addPin(lat,lng);
+  return true;
+}
+function addPin(lat,lng){
+  const type=$('#pinType').value, color=$('#pinColor').value;
+  const id=pinIdCounter++; const label=prompt('Label for pin?', type)||type;
+  const m = addMarker(lat,lng,{color});
+  const pin={id,lat,lng,type,color,label,marker:m,notes:''}; pins.push(pin);
+
+  // Drag to move (Leaflet vs MapLibre)
+  if(useML){
+    m._m.setDraggable(true);
+    m._m.on('dragend',ev=>{ const ll=ev.target.getLngLat(); pin.lng=ll.lng; pin.lat=ll.lat; renderPinList(false); });
+    m.on('click',()=>editPin(pin.id));
+  }else{
+    m._m.dragging.enable();
+    m._m.on('dragend',ev=>{ const ll=ev.target.getLatLng(); pin.lat=ll.lat; pin.lng=ll.lng; renderPinList(false); });
+    m._m.on('click',()=>editPin(pin.id));
+  }
+  renderPinList(true);
+}
+function editPin(id){
+  const p = pins.find(x=>x.id===id); if(!p) return;
+  const lbl = prompt('Edit label:', p.label); if(lbl!=null) p.label=lbl;
+  const nt  = prompt('Notes (free text):', p.notes??''); if(nt!=null) p.notes=nt;
+  renderPinList(false);
+}
+function deletePin(id){
+  const i=pins.findIndex(x=>x.id===id); if(i<0) return; pins[i].marker.remove(); pins.splice(i,1); renderPinList(true);
+}
+function centerOnPinType(t){
+  const p = pins.find(x=>x.type===t);
+  if(!p){ alert(`No ${t} pin yet.`); return; }
+  flyTo(p.lat,p.lng);
+}
+function renderPinList(scrollBottom=true){
+  const box=$('#pinList');
+  if(pins.length===0){ box.innerHTML='<div class="note">No pins yet.</div>'; return; }
+  box.innerHTML=pins.map(p=>`
+    <div class="pin-item" data-id="${p.id}">
+      <div>
+        <span class="pin-swatch" style="background:${p.color}"></span>
+        <strong>${p.label}</strong> <span class="meta">(${p.type})</span>
+        <div class="meta">${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</div>
+      </div>
+      <div>
+        <button class="smallbtn" data-act="go">Go</button>
+        <button class="smallbtn" data-act="edit">Edit</button>
+        <button class="smallbtn" data-act="del">Del</button>
+      </div>
+    </div>`).join('');
+  box.querySelectorAll('.pin-item').forEach(el=>{
+    const id=+el.dataset.id;
+    el.addEventListener('click',()=>{ pinsSelectedId=id; });
+    el.querySelector('[data-act="go"]').onclick=(e)=>{ e.stopPropagation(); const p=pins.find(x=>x.id===id); flyTo(p.lat,p.lng); };
+    el.querySelector('[data-act="edit"]').onclick=(e)=>{ e.stopPropagation(); editPin(id); };
+    el.querySelector('[data-act="del"]').onclick=(e)=>{ e.stopPropagation(); deletePin(id); };
+  });
+  if(scrollBottom) box.scrollTop=box.scrollHeight;
+}
+
+/* ===== counties load ===== */
+(async function(){ await loadCounties(); })();
+</script>
+</body>
+</html>
 <script src="app.js"></script>
 </body>
 </html>
