@@ -66,3 +66,51 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:
   #stack{width:92vw}
   .grp .lbl{display:none}
 }
+
+/* ---- Compact control sizing ---- */
+#controls { padding: 12px; }
+#controls h1 { font-size: 16px; margin-bottom: 8px; }
+#controls h2 { font-size: 13px; margin: 8px 0; }
+label { font-size: 12px; gap: 4px; margin: 2px 6px 2px 0; }
+input[type="number"], select { padding: 4px 6px; font-size: 12px; }
+button { padding: 6px 8px; font-size: 12px; border-radius: 6px; }
+.row { gap: 6px; margin-top: 4px; }
+.toggles { grid-template-columns: 1fr 1fr; gap: 2px 6px; }
+
+/* ---- Top bar overlay ---- */
+#topbar {
+  position: absolute; left: 360px; right: 0; top: 0;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 6px 8px; gap: 8px; z-index: 500;
+  background: linear-gradient(180deg, rgba(23,25,35,0.96), rgba(23,25,35,0.80));
+  border-bottom: 1px solid #222735; backdrop-filter: blur(3px);
+}
+#topbar .pill {
+  background:#1b2130; border:1px solid #2a2f3d; border-radius:999px;
+  padding: 2px 8px; display:inline-flex; align-items:center; gap:6px; font-size:12px;
+}
+#tb-wind-arrow { display:inline-block; transform: rotate(90deg); }
+@media (max-width: 900px) { #topbar { left: 0; } }
+
+/* ---- HUD (draggable + resizable) ---- */
+.hud {
+  width: 260px; min-width: 220px; max-width: 420px;
+  background:#141924; border:1px solid #2a2f3d; border-radius:10px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.35); color: var(--text); user-select:none;
+}
+.hud-header {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:8px; cursor:move; background:#101521; border-bottom:1px solid #222735; border-radius:10px 10px 0 0;
+  font-size:13px;
+}
+.hud-actions button { background:#1e2433; border:1px solid #2a2f3d; padding:2px 6px; margin-left:4px; }
+.hud-body { padding:8px; display:grid; gap:8px; }
+.hud-row { display:grid; grid-template-columns: 1fr 90px; gap:8px; align-items:center; }
+.hud-row input { width:100%; }
+.hud-row.tips { grid-template-columns: 1fr; font-size:11px; color:var(--muted); }
+.hud-resize {
+  position:absolute; right:2px; bottom:2px; width:12px; height:12px;
+  cursor:nwse-resize; background: linear-gradient(135deg, transparent 50%, #2a2f3d 50%);
+  border-bottom-right-radius:10px;
+}
+.leaflet-control.hud-wrap { background: transparent; border: none; }

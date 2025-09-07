@@ -95,6 +95,57 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:
     <div id="mlmap"></div>
     <div id="map"></div>
 
+    <!-- Compact top bar (overlays map; stays in sync with sidebar wind inputs) -->
+    <div id="topbar" aria-label="Map toolbar">
+      <div class="tb-left">
+        <span class="pill">
+          <span id="tb-wind-arrow" aria-hidden="true">🧭</span>
+          <span id="tb-wind-deg">90°</span> ·
+          <span id="tb-wind-speed">10 m/s</span>
+        </span>
+        <span class="pill" title="Air temperature (placeholder)">
+          🌡 <span id="tb-temp">—°</span>
+        </span>
+        <span class="pill" title="Relative humidity (placeholder)">
+          💧 <span id="tb-humidity">—%</span>
+        </span>
+        <span class="pill" title="Precipitation intensity (placeholder)">
+          ☔ <span id="tb-precip">—</span>
+        </span>
+      </div>
+      <div class="tb-right">
+        <button id="toggleWindHud" title="Show/hide wind HUD">HUD</button>
+      </div>
+    </div>
+
+    <!-- Wind HUD template (draggable/resizable control rendered inside the map) -->
+    <template id="windHudTpl">
+      <div class="hud" id="windHud" role="dialog" aria-label="Wind HUD">
+        <div class="hud-header">
+          <strong>Wind / Fallout Timing</strong>
+          <div class="hud-actions">
+            <button data-hud="shrink" title="Shrink">–</button>
+            <button data-hud="grow" title="Grow">+</button>
+            <button data-hud="close" title="Close">✕</button>
+          </div>
+        </div>
+        <div class="hud-body">
+          <div class="hud-row">
+            <label>Direction (°)</label>
+            <input id="hudWindDeg" type="number" min="0" max="359" step="1" />
+          </div>
+          <div class="hud-row">
+            <label>Speed (m/s)</label>
+            <input id="hudWindSpeed" type="number" min="0" step="0.5" />
+          </div>
+          <div class="hud-row tips">
+            <span>Use this HUD to tweak wind quickly. Values sync with side panel.</span>
+          </div>
+        </div>
+        <div class="hud-resize" aria-hidden="true"></div>
+      </div>
+    </template>
+
     <!-- Right overlay stack -->
     <div id="stack">
       <div class="panel open" id="pLegend">
