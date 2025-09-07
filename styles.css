@@ -2,16 +2,29 @@
   --bg:#101114;--panel:#0f1318;--muted:#8a95a7;--fg:#e9eef7;--accent:#22d3ee;
   --ok:#22c55e;--warn:#f59e0b;--psi20:#6d28d9;--psi5:#3b82f6;--psi1:#22d3ee;--therm:#f97316;--fall:#22c55e;
 }
+
 html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial}
 #app{display:grid;grid-template-rows:auto 1fr;height:100%}
-#bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px;background:var(--panel);box-shadow:0 2px 0 #0008;z-index:12}
-#bar .label{font-size:12px;opacity:.85;margin-right:4px}
-#bar input,#bar select,#bar button{background:#0b0e12;border:1px solid #1d2633;color:var(--fg);padding:6px 8px;border-radius:10px}
-#bar button{cursor:pointer}
-#mapwrap{position:relative; min-height: 420px}
+
+/* Top bar */
+#bar{position:sticky;top:0;z-index:12;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px;background:var(--panel);box-shadow:0 2px 0 #0008}
+#bar .grp{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.lbl{font-size:12px;opacity:.85}
+.unit{font-size:12px;opacity:.75;margin-left:-6px}
+.num{background:#0b0e12;border:1px solid #1d2633;color:var(--fg);padding:6px 8px;border-radius:10px}
+.num.sm{width:80px}
+.num.xs{width:64px}
+#bar select,#bar button{background:#0b0e12;border:1px solid #1d2633;color:var(--fg);padding:6px 8px;border-radius:10px}
+.chk{display:flex;gap:6px;align-items:center}
+.btn{cursor:pointer}
+.btn.ghost{opacity:.85}
+
+/* Map wrappers */
+#mapwrap{position:relative}
 #mlmap,#map{position:absolute;inset:0}
 
-#stack{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:10px;z-index:10;width:min(92vw,300px)}
+/* Right stack */
+#stack{position:absolute;right:10px;top:10px;display:flex;flex-direction:column;gap:10px;z-index:10;width:min(92vw,320px);max-height:calc(100% - 20px);overflow:auto}
 .panel{background:#0b0e12dd;border:1px solid #1d2633;border-radius:10px;backdrop-filter:blur(4px)}
 .panel header{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:1px solid #1d2633;cursor:pointer}
 .panel .content{padding:8px 10px;display:none}
@@ -22,14 +35,32 @@ html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font-family:
 .row{display:flex;align-items:center;gap:8px;margin:6px 0}
 .row input[type="range"]{width:100%;accent-color:var(--accent)}
 .smallbtn{padding:4px 8px;border-radius:8px;border:1px solid #1d2633;background:#0b0e12;color:var(--fg);cursor:pointer}
+.rval{width:36px;text-align:right}
 
+/* Shelter legend dots */
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:middle;margin:0 4px}
+.dot.g{background:#22c55e}
+.dot.o{background:#f59e0b}
+
+/* Wind HUD */
 #windHUD{position:absolute;left:10px;bottom:10px;z-index:11;background:#0b0e12ee;border:1px solid #1d2633;border-radius:12px;box-shadow:0 2px 8px #0008;min-width:220px}
 #windHead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-bottom:1px solid #1d2633;cursor:move}
 #windBody{display:flex;gap:10px;align-items:center;padding:8px 10px}
-#windCompass{display:block}
 #windResize{position:absolute;right:4px;bottom:4px;width:18px;height:18px;border-right:2px solid #334155;border-bottom:2px solid #334155;border-radius:3px;cursor:nwse-resize}
 #windFoot{display:flex;gap:6px;padding:0 10px 10px 10px;flex-wrap:wrap}
 #windFoot input{width:84px}
+.eta{font-weight:700}
 
-.ring-label{position:absolute;transform:translate(-50%,-50%);background:#0b0e12cc;padding:2px 6px;border:1px solid #1d2633;border-radius:8px;font-size:12px;pointer-events:none}
+/* Popup helper */
+.map-popup{background:#0b0e12cc;color:var(--fg);border:1px solid #1d2633;border-radius:10px;padding:8px;font-size:13px;max-width:260px}
+.map-popup h4{margin:0 0 4px 0;font-size:14px}
+.map-popup .sub{opacity:.8}
+
+/* Errors */
 .err{position:absolute;left:10px;top:10px;background:#7f1d1d;color:#fff;padding:8px 12px;border-radius:8px;display:none;z-index:20}
+
+/* Mobile fits */
+@media (max-width:720px){
+  #stack{width:92vw}
+  .grp .lbl{display:none}
+}
