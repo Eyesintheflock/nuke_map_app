@@ -1,29 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>Nuke Effects • Terrain 3D • Population • Waypoints</title>
+
 <link rel="manifest" href="manifest.webmanifest">
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
-  <title>Nuke Effects – Terrain 3D + Population + Shelter HUD</title>
 
-  <!-- Map engines -->
-  <link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet"/>
-  <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
+<link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
 
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <!-- Geometry utils -->
-  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+<script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
 
-  <!-- App styles -->
-  <link rel="stylesheet" href="styles.css"/>
+<link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div id="app">
-    <!-- Top control bar -->
-    <div id="bar">
-      <span class="label">Burst:</span>
+<div id="app">
+  <!-- Top control bar -->
+  <div id="bar">
+    <div class="grp">
+      <label class="lbl">Burst</label>
       <select id="preset">
         <option value="custom">Custom</option>
         <option value="15">Little Boy (15 kt)</option>
@@ -32,165 +31,168 @@
         <option value="1200">B83 (1.2 Mt)</option>
         <option value="50000">Tsar Bomba (50 Mt)</option>
       </select>
-      <span class="label">Yield</span><input id="yield" type="number" min="0.1" step="0.1" value="100" style="width:84px">kt
-      <span class="label">Alt</span><input id="alt" type="number" step="10" value="0" style="width:80px">m
-      <label><input id="fallout" type="checkbox" checked> Fallout</label>
-      <span class="label">WX</span>
+      <label class="lbl">Yield</label><input id="yield" type="number" min="0.1" step="0.1" value="100" class="num sm"><span class="unit">kt</span>
+      <label class="lbl">Alt</label><input id="alt" type="number" step="10" value="0" class="num sm"><span class="unit">m</span>
+      <label class="chk"><input id="fallout" type="checkbox" checked> Fallout</label>
+      <label class="lbl">WX</label>
       <select id="wx"><option value="dry">Dry</option><option value="rain">Rain</option><option value="snow">Snow</option></select>
-      <span class="label">Wind</span>
-      <input id="wind" type="number" min="0" max="359" step="1" value="90" style="width:70px">°
-      <span class="label">Speed</span>
-      <input id="windSpd" type="number" min="0" max="60" step="1" value="10" style="width:70px">m/s
-      <button id="add">Add burst (tap map)</button>
-      <button id="clear">Clear</button>
-      <button id="refreshTiles">Refresh tiles</button>
-      <span class="label">Basemap</span>
-      <select id="basemap">
-        <option value="auto" selected>Auto</option>
-        <option value="osm">OSM Streets</option>
-        <option value="sat">Satellite (demo)</option>
-        <option value="grid">Offline grid</option>
-      </select>
     </div>
 
-    <!-- Map area -->
-    <div id="mapwrap">
-      <div id="mlmap"></div>
-      <div id="map"></div>
+    <div class="grp">
+      <label class="lbl">Wind</label><input id="wind" type="number" min="0" max="359" step="1" value="90" class="num sm"><span class="unit">°</span>
+      <label class="lbl">Speed</label><input id="windSpd" type="number" min="0" max="60" step="1" value="10" class="num sm"><span class="unit">m/s</span>
+      <button id="add" class="btn">Add burst (tap map)</button>
+      <button id="clear" class="btn ghost">Clear</button>
+      <button id="refreshTiles" class="btn ghost">Refresh tiles</button>
+    </div>
 
-      <!-- Right stack panels -->
-      <div id="stack">
-        <div class="panel open" id="pLegend">
-          <header><div>Legend</div><div>▾</div></header>
-          <div class="content">
-            <div class="row"><span class="badge b20">20 psi</span> severe collapse</div>
-            <div class="row"><span class="badge b5">5 psi</span> heavy damage</div>
-            <div class="row"><span class="badge b1">1 psi</span> light damage</div>
-            <div class="row"><span class="badge bth">Thermal 3rd°</span> burns</div>
-            <div class="row"><span class="badge bfo">Fallout</span> dose plume</div>
-            <div class="note">Tap any ring/plume for text and population.</div>
-          </div>
-        </div>
-
-        <div class="panel open" id="pTiles">
-          <header><div>Tiles / Terrain</div><div>▾</div></header>
-          <div class="content">
-            <div class="row">
-              <button class="smallbtn" id="btnRefresh2">Refresh tiles</button>
-              <select id="bmSel">
-                <option value="auto" selected>Auto</option>
-                <option value="osm">OSM Streets</option>
-                <option value="sat">Satellite (demo)</option>
-                <option value="grid">Offline grid</option>
-              </select>
-            </div>
-            <div class="row">
-              <label><input id="terrainOn" type="checkbox"> Terrain (3D)</label>
-              <label><input id="hillshadeOn" type="checkbox" checked> Hillshade</label>
-            </div>
-            <div class="row">Exaggeration
-              <input id="exagg" type="range" min="1" max="3" step="0.1" value="1.4">
-              <span id="exVal" style="width:36px;text-align:right">1.4</span>
-            </div>
-            <div class="note">Two-finger drag to tilt when Terrain is on.</div>
-          </div>
-        </div>
-
-        <div class="panel" id="pOver">
-          <header><div>Overlays / Population</div><div>▾</div></header>
-          <div class="content">
-            <div class="row"><label><input id="popHeat" type="checkbox"> Population heat (county)</label></div>
-            <div class="row">Precip intensity
-              <input id="precip" type="range" min="0" max="100" value="20">
-              <span id="precipVal" style="width:36px;text-align:right">20</span>
-            </div>
-            <div class="row">Humidity
-              <input id="humid" type="range" min="0" max="100" value="40">
-              <span id="humidVal" style="width:36px;text-align:right">40</span>
-            </div>
-            <div id="popRead" class="note">Population in current effects: —</div>
-            <button class="smallbtn" id="calcPop">Recalc population</button>
-          </div>
-        </div>
-
-        <div class="panel" id="pShelter">
-          <header><div>Shelter Finder (terrain-aware)</div><div>▾</div></header>
-          <div class="content">
-            <div class="row">
-              <button class="smallbtn" id="btnGPS">My Position (GPS)</button>
-              <select id="radius">
-                <option value="250">250 m</option>
-                <option value="500" selected>500 m</option>
-                <option value="1000">1 km</option>
-                <option value="1500">1.5 km</option>
-              </select>
-            </div>
-            <div class="row">
-              <button class="smallbtn" id="findShelter">Suggest spots</button>
-              <button class="smallbtn" id="clearShelter">Clear</button>
-            </div>
-            <div class="note">Prefers leeward, lower ground vs wind. Hard cover always beats terrain.</div>
-            <div id="shelterRead" class="note">—</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Wind HUD -->
-      <div id="windHUD">
-        <div id="windHead"><div style="font-weight:600">Wind / Fallout Timing</div><div id="windRead" class="note">90° (E), 10 m/s</div></div>
-        <div id="windBody">
-          <canvas id="windCompass" width="120" height="120"></canvas>
-          <div>
-            <div class="note">Drag arrow • 0–359°</div>
-            <div id="hudEta" style="margin-top:8px;font-weight:600">ETA to you: —</div>
-            <div id="hudLeave" class="note">Leave-shelter est: —</div>
-          </div>
-        </div>
-        <div id="windFoot">
-          <input id="windNum" type="number" min="0" max="359" step="1" value="90">
-          <input id="windNumSpd" type="number" min="0" max="60" step="1" value="10">
-          <button id="windCenter" class="smallbtn">Reset pos</button>
-          <button id="windHide" class="smallbtn">Hide</button>
-        </div>
-        <div id="windResize" title="Resize"></div>
-      </div>
-
-      <div id="err" class="err"></div>
+    <div class="grp">
+      <label class="lbl">Basemap</label>
+      <select id="basemap"><option value="auto" selected>Auto</option><option value="osm">OSM Streets</option><option value="sat">Satellite (demo)</option><option value="grid">Offline grid</option></select>
+      <button id="goHome" class="btn ghost">Go Home</button>
+      <button id="goWork" class="btn ghost">Go Work</button>
     </div>
   </div>
 
-  <!-- County fallback data (use counties.json in the repo for full coverage; this is a local fallback) -->
-  <script id="countiesData" type="application/json">
-  {
-    "type":"FeatureCollection",
-    "features":[
-      {"type":"Feature","properties":{"name":"Columbia, OR","pop":52800},"geometry":{"type":"Polygon","coordinates":[[[-123.42,45.95],[-123.42,45.55],[-122.65,45.55],[-122.65,46.20],[-123.42,45.95]]]}},
-      {"type":"Feature","properties":{"name":"Clatsop, OR","pop":41100},"geometry":{"type":"Polygon","coordinates":[[[-124.10,46.30],[-124.10,45.80],[-123.50,45.80],[-123.50,46.30],[-124.10,46.30]]]}},
-      {"type":"Feature","properties":{"name":"Cowlitz, WA","pop":111000},"geometry":{"type":"Polygon","coordinates":[[[-123.30,46.60],[-123.30,46.00],[-122.48,46.00],[-122.48,46.60],[-123.30,46.60]]]}},
-      {"type":"Feature","properties":{"name":"Clark, WA","pop":503000},"geometry":{"type":"Polygon","coordinates":[[[-123.30,45.90],[-123.30,45.50],[-122.20,45.50],[-122.20,45.90],[-123.30,45.90]]]}},
-      {"type":"Feature","properties":{"name":"Multnomah, OR","pop":815000},"geometry":{"type":"Polygon","coordinates":[[[-122.95,45.70],[-122.95,45.40],[-122.25,45.40],[-122.25,45.70],[-122.95,45.70]]]}},
-      {"type":"Feature","properties":{"name":"Washington, OR","pop":606000},"geometry":{"type":"Polygon","coordinates":[[[-123.40,45.80],[-123.40,45.30],[-122.70,45.30],[-122.70,45.80],[-123.40,45.80]]]}},
-      {"type":"Feature","properties":{"name":"Tillamook, OR","pop":27300},"geometry":{"type":"Polygon","coordinates":[[[-123.95,45.75],[-123.95,45.20],[-123.40,45.20],[-123.40,45.75],[-123.95,45.75]]]}},
-      {"type":"Feature","properties":{"name":"Yamhill, OR","pop":110000},"geometry":{"type":"Polygon","coordinates":[[[-123.50,45.60],[-123.50,45.10],[-122.95,45.10],[-122.95,45.60],[-123.50,45.60]]]}},
-      {"type":"Feature","properties":{"name":"Polk, OR","pop":91000},"geometry":{"type":"Polygon","coordinates":[[[-123.65,45.20],[-123.65,44.70],[-122.95,44.70],[-122.95,45.20],[-123.65,45.20]]]}},
-      {"type":"Feature","properties":{"name":"Marion, OR","pop":353000},"geometry":{"type":"Polygon","coordinates":[[[-123.25,45.10],[-123.25,44.50],[-122.25,44.50],[-122.25,45.10],[-123.25,45.10]]]}},
-      {"type":"Feature","properties":{"name":"Lincoln, OR","pop":51000},"geometry":{"type":"Polygon","coordinates":[[[-124.30,45.10],[-124.30,44.40],[-123.75,44.40],[-123.75,45.10],[-124.30,45.10]]]}},
-      {"type":"Feature","properties":{"name":"Benton, OR","pop":96000},"geometry":{"type":"Polygon","coordinates":[[[-123.60,44.80],[-123.60,44.30],[-123.05,44.30],[-123.05,44.80],[-123.60,44.80]]]}},
-      {"type":"Feature","properties":{"name":"Pacific, WA","pop":23000},"geometry":{"type":"Polygon","coordinates":[[[-124.10,46.80],[-124.10,46.30],[-123.50,46.30],[-123.50,46.80],[-124.10,46.80]]]}},
-      {"type":"Feature","properties":{"name":"Wahkiakum, WA","pop":4500},"geometry":{"type":"Polygon","coordinates":[[[-123.60,46.45],[-123.60,46.20],[-123.20,46.20],[-123.20,46.45],[-123.60,46.45]]]} }
-    ]
-  }
-  </script>
+  <!-- Map stack -->
+  <div id="mapwrap">
+    <div id="mlmap"></div>
+    <div id="map"></div>
 
-  <!-- App -->
-  <script src="app.js"></script>
+    <!-- Right overlay stack -->
+    <div id="stack">
+      <div class="panel open" id="pLegend">
+        <header><div>Legend</div><div>▾</div></header>
+        <div class="content">
+          <div class="row"><span class="badge b20">20 psi</span> severe collapse</div>
+          <div class="row"><span class="badge b5">5 psi</span> heavy damage</div>
+          <div class="row"><span class="badge b1">1 psi</span> light damage</div>
+          <div class="row"><span class="badge bth">Thermal 3rd°</span> burns</div>
+          <div class="row"><span class="badge bfo">Fallout</span> dose plume</div>
+          <div class="note">Tap any ring/plume for text, area, & population.</div>
+        </div>
+      </div>
 
-  <!-- Optional: register SW (safe, opt-in only) -->
-  <script>
-  if ('serviceWorker' in navigator) {
-    // Register—no caching will happen unless you later add ?enableSW=1
-    navigator.serviceWorker.register('./sw.js').catch(()=>{});
-  }
-  </script>
+      <div class="panel open" id="pTiles">
+        <header><div>Tiles / Terrain</div><div>▾</div></header>
+        <div class="content">
+          <div class="row">
+            <button class="smallbtn" id="btnRefresh2">Refresh tiles</button>
+            <select id="bmSel"><option value="auto" selected>Auto</option><option value="osm">OSM Streets</option><option value="sat">Satellite (demo)</option><option value="grid">Offline grid</option></select>
+          </div>
+          <div class="row">
+            <label><input id="terrainOn" type="checkbox" checked> Terrain (3D)</label>
+            <label><input id="hillshadeOn" type="checkbox" checked> Hillshade</label>
+          </div>
+          <div class="row">Exaggeration <input id="exagg" type="range" min="1" max="3" step="0.1" value="1.4"><span id="exVal" class="rval">1.4</span></div>
+          <div class="note">Tilt with two fingers. Turn off terrain if device is slow.</div>
+        </div>
+      </div>
+
+      <div class="panel" id="pOver">
+        <header><div>Overlays / Population</div><div>▾</div></header>
+        <div class="content">
+          <div class="row"><label><input id="popHeat" type="checkbox"> Population heat (county)</label></div>
+          <div class="row">Precip <input id="precip" type="range" min="0" max="100" value="20"><span id="precipVal" class="rval">20</span></div>
+          <div class="row">Humidity <input id="humid" type="range" min="0" max="100" value="40"><span id="humidVal" class="rval">40</span></div>
+
+          <div class="row">
+            <label class="lbl">Risk paint</label>
+            <select id="riskLevel">
+              <option value="">Off</option>
+              <option value="1">Low</option>
+              <option value="2">Med</option>
+              <option value="3">High</option>
+            </select>
+            <button id="riskClear" class="smallbtn">Clear risk</button>
+          </div>
+
+          <div id="popRead" class="note">Population in current effects: —</div>
+          <button class="smallbtn" id="calcPop">Recalc population</button>
+        </div>
+      </div>
+
+      <div class="panel" id="pShelter">
+        <header><div>Shelter Finder (terrain-aware) <span class="mini-help" title="Green = better (leeward/lower); Orange = worse (ridge/downwind).">?</span></div><div>▾</div></header>
+        <div class="content">
+          <div class="row">
+            <button class="smallbtn" id="btnGPS">My Position</button>
+            <select id="radius">
+              <option value="250">250 m</option>
+              <option value="500" selected>500 m</option>
+              <option value="1000">1 km</option>
+              <option value="1500">1.5 km</option>
+            </select>
+            <button class="smallbtn" id="findShelter">Suggest</button>
+            <button class="smallbtn" id="clearShelter">Clear</button>
+          </div>
+          <div class="note">Dots: <span class="dot g"></span> better / <span class="dot o"></span> avoid.</div>
+          <div id="shelterRead" class="note">—</div>
+        </div>
+      </div>
+
+      <div class="panel" id="pPins">
+        <header><div>Waypoints & Timers</div><div>▾</div></header>
+        <div class="content">
+          <div class="row">
+            <label class="lbl">Mode</label>
+            <select id="pinType">
+              <option value="home">Home</option>
+              <option value="work">Work</option>
+              <option value="cache">Cache</option>
+              <option value="family">Family/Friends</option>
+              <option value="checkpoint">Checkpoint</option>
+              <option value="op">OP/LP</option>
+              <option value="shelter">Shelter (0–10)</option>
+              <option value="threat">Threat (militant)</option>
+              <option value="poi" selected>Generic</option>
+            </select>
+            <input id="pinLabel" class="num" placeholder="Label">
+            <input id="pinScore" class="num xs" type="number" min="0" max="10" step="1" value="5" title="Shelter score when 'Shelter' type">
+            <button id="pinAdd" class="smallbtn">Add pin (tap map)</button>
+            <button id="pinList" class="smallbtn">List</button>
+          </div>
+          <div class="row">
+            <button id="homeCenter" class="smallbtn">Home = Center</button>
+            <button id="workCenter" class="smallbtn">Work = Center</button>
+            <button id="goSelected" class="smallbtn">Center on selected</button>
+          </div>
+
+          <div class="row">
+            <label class="lbl">Adversary ETA</label>
+            <input id="advMins" class="num xs" type="number" min="1" step="1" value="60"><span class="unit">min</span>
+            <button id="advStart" class="smallbtn">Start</button>
+            <button id="advStop" class="smallbtn">Stop</button>
+            <div id="advShow" class="note">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Wind HUD -->
+    <div id="windHUD">
+      <div id="windHead"><div class="title">Wind / Fallout Timing</div><div id="windRead" class="note">90° (E), 10 m/s</div></div>
+      <div id="windBody">
+        <canvas id="windCompass" width="120" height="120"></canvas>
+        <div>
+          <div class="note">Drag arrow • 0–359°</div>
+          <div id="hudEta" class="eta">ETA to you: —</div>
+          <div id="hudLeave" class="note">Leave-shelter est: —</div>
+        </div>
+      </div>
+      <div id="windFoot">
+        <input id="windNum" type="number" min="0" max="359" step="1" value="90">
+        <input id="windNumSpd" type="number" min="0" max="60" step="1" value="10">
+        <button id="windCenter" class="smallbtn">Reset pos</button>
+        <button id="windHide" class="smallbtn">Hide</button>
+      </div>
+      <div id="windResize" title="Resize"></div>
+    </div>
+
+    <div id="err" class="err"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
 </body>
 </html>
