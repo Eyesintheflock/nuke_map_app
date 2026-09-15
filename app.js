@@ -4,10 +4,10 @@ const toRad = d => d * Math.PI / 180, toDeg = r => r * 180 / Math.PI;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const bearingToCardinal = b => ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(((b%360)+360)%360/22.5)%16];
 const getCSS = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-function lsGet(k, def){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; } }
-function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+const lsGet = AppPlatform.storage.get;
+function lsSet(k,v){ if(!AppPlatform.storage.set(k,v)) showErr('Storage unavailable or full. Changes may not survive reload.'); }
 const showErr = msg => { const e = $('#err'); if(!e) return; e.textContent = msg; e.style.display='block'; setTimeout(()=>e.style.display='none', 4000); };
-if ('serviceWorker' in navigator) {navigator.serviceWorker.register('sw.js').catch(console.error);}
+if ('serviceWorker' in navigator) {navigator.serviceWorker.register('./sw.js', {updateViaCache:'none'}).then(r=>r.update()).catch(e=>console.warn('Offline shell unavailable',e));}
 
 // Throttle utility for smooth drag/HUD sync
 function throttle(fn, ms = 50) {
@@ -23,6 +23,7 @@ function throttle(fn, ms = 50) {
 /* ===================== globals ===================== */
 let useML=false, mlmap, lmap, addMode=false;
 let windDeg=lsGet('windDeg',90), windSpd=lsGet('windSpd',10);
+let burstMarkers=[];
 let effects=[], myPos=null, popHeatLayer=null, shelterMarkers=[], lastBurst=null, counties=null;
 
 function updateTopbar(){
@@ -39,7 +40,7 @@ function webglOk(){
   try{
     if(getFlag('leaf')) return false;
     const c=document.createElement('canvas');
-    return !!(window.WebGLRenderingContext && (c.getContext('webgl')||c.getContext('experimental-webgl')));
+    return !!(window.maplibregl && window.WebGLRenderingContext && (c.getContext('webgl')||c.getContext('experimental-webgl')));
   }catch{ return false; }
 }
 
@@ -48,19 +49,21 @@ function initMap(){
   const start=[45.85,-123.49];
 
   if(webglOk()){
+    try {
     useML=true; $('#map').style.display='none';
     mlmap=new maplibregl.Map({
       container:'mlmap',
       style:{
         "version":8,
         "sources":{
-          "osm":{"type":"raster","tiles":["https://a.tile.openstreetmap.org/{z}/{x}/{y}.png","https://b.tile.openstreetmap.org/{z}/{x}/{y}.png","https://c.tile.openstreetmap.org/{z}/{x}/{y}.png"],"tileSize":256,"attribution":"© OSM"},
-          "sat":{"type":"raster","tiles":["https://tiles.stadiamaps.com/tiles/alidade_satellite/{z}/{x}/{y}.jpg"],"tileSize":256,"attribution":"Satellite demo"},
+          "osm":{"type":"raster","tiles":["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],"tileSize":256,"attribution":"© OSM"},
+          "sat":{"type":"raster","tiles":["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],"tileSize":256,"attribution":"Tiles © Esri — Esri, Maxar, Earthstar Geographics and GIS User Community"},
+          "topo":{"type":"raster","tiles":["https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"],"tileSize":256,"attribution":"Tiles © Esri and contributors"},
           "terrain-dem":{"type":"raster-dem","tiles":["https://demotiles.maplibre.org/terrain-tiles/{z}/{x}/{y}.png"],"tileSize":256}
         },
         "layers":[
           {"id":"baseraster","type":"raster","source":"osm","minzoom":0,"maxzoom":19},
-          {"id":"hillshade","type":"hillshade","source":"terrain-dem","layout":{"visibility":"visible"},"paint":{"hillshade-exaggeration":0.6}}
+          {"id":"hillshade","type":"hillshade","source":"terrain-dem","layout":{"visibility":"none"},"paint":{"hillshade-exaggeration":0.6}}
         ]
       },
       center:[start[1],start[0]], zoom:8.6, pitch:0
@@ -73,11 +76,14 @@ function initMap(){
       if(addMode){ placeBurst([e.lngLat.lat, e.lngLat.lng]); addMode=false; $('#add').classList.remove('active'); }
     });
 
-  } else {
+    } catch(error) { console.warn('WebGL startup failed; using Leaflet',error); try{mlmap?.remove();}catch{} useML=false; }
+  }
+  if(!useML){
+    $('#map').style.display='block';
     useML=false; $('#mlmap').style.display='none';
     lmap=L.map('map', { renderer: L.canvas() }).setView(start,9);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(lmap);
-    L.tileLayer('https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',{opacity:0.5}).addTo(lmap);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(lmap);
+
 
     lmap.on('click', e=>{
       if(pinsHandleMapClick(e.latlng.lat, e.latlng.lng)) return;
@@ -85,7 +91,7 @@ function initMap(){
     });
   }
 }
-initMap();
+// Map startup occurs after state and controls have initialized.
 
 /* ===================== panel folding ===================== */
 for(const h of document.querySelectorAll('.panel header')){
@@ -109,22 +115,20 @@ $('#hillshadeOn').onchange=()=>toggleHillshade();
 $('#exagg').oninput=e=>{ $('#exVal').textContent=e.target.value; setExaggeration(+e.target.value); };
 
 function refreshTiles(){
+  const sel=$('#basemap').value; $('#bmSel').value=sel;
   if(useML){
-    const sel=$('#basemap').value;
-    const src = sel==='sat' ? 'sat' : 'osm';
-    try{ if(mlmap.getLayer('baseraster')) mlmap.removeLayer('baseraster'); }catch{}
-    mlmap.addLayer({"id":"baseraster","type":"raster","source":src,"minzoom":0,"maxzoom":19}, 'hillshade');
+    if(!mlmap.isStyleLoaded()) { mlmap.once('load',refreshTiles); return; }
+    if(mlmap.getLayer('baseraster')) mlmap.removeLayer('baseraster');
+    if(sel!=='grid') mlmap.addLayer({id:'baseraster',type:'raster',source:sel==='sat'?'sat':sel==='topo'?'topo':'osm'}, 'hillshade');
   }else{
-    lmap.eachLayer(l=>{ if(l._url) l.remove(); });
-    const sel=$('#basemap').value;
-    if(sel==='sat'){ L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_satellite/{z}/{x}/{y}.jpg',{maxZoom:18}).addTo(lmap); }
-    else{ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(lmap); }
-    L.tileLayer('https://tiles.wmflabs.org/hillshading/{z}/{x}/{y}.png',{opacity:0.5}).addTo(lmap);
+    lmap.eachLayer(l=>{ if(l instanceof L.TileLayer) l.remove(); });
+    const urls={sat:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',topo:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',osm:'https://tile.openstreetmap.org/{z}/{x}/{y}.png'};
+    if(sel!=='grid') L.tileLayer(urls[sel]||urls.osm,{maxZoom:19,attribution:sel==='sat'||sel==='topo'?'Tiles © Esri and contributors':'© OpenStreetMap contributors'}).addTo(lmap);
   }
 }
-function toggleTerrain(){ if(useML) mlmap.setTerrain($('#terrainOn').checked?{source:'terrain-dem',exaggeration:+$('#exagg').value}:null); }
-function toggleHillshade(){ if(useML) try{ mlmap.setLayoutProperty('hillshade','visibility',$('#hillshadeOn').checked?'visible':'none'); }catch{} }
-function setExaggeration(x){ if(useML) try{ mlmap.setTerrain({source:'terrain-dem',exaggeration:x}); }catch{} }
+function toggleTerrain(){ if(useML && mlmap.isStyleLoaded()) mlmap.setTerrain($('#terrainOn').checked?{source:'terrain-dem',exaggeration:+$('#exagg').value}:null); }
+function toggleHillshade(){ if(useML && mlmap.isStyleLoaded()) mlmap.setLayoutProperty('hillshade','visibility',$('#hillshadeOn').checked?'visible':'none'); }
+function setExaggeration(x){ if($('#terrainOn').checked) toggleTerrain(); }
 
 /* ===================== effects model ===================== */
 function ringKm(y,psi){ const W=Math.cbrt(Math.max(0.1,y)); if(psi===20) return 0.9*W; if(psi===5) return 1.9*W; if(psi===1) return 4.2*W; return 0; }
@@ -179,7 +183,7 @@ function addMarker(lat,lng,opts={}){
 function flyTo(lat,lng){ if(useML) mlmap.flyTo({center:[lng,lat], zoom:12}); else lmap.setView([lat,lng],12); }
 
 function clearMap(){
-  effects=[];
+  effects=[];lastBurst=null;burstMarkers.forEach(m=>m.remove());burstMarkers=[];
   if(useML){
     layersML.forEach(id=>{ try{ mlmap.removeLayer(id+'l'); }catch{} try{ mlmap.removeLayer(id); }catch{} try{ mlmap.removeSource(id);}catch{} });
     layersML=[];
@@ -198,11 +202,12 @@ function clearMap(){
 
 /* ===================== bursts ===================== */
 function placeBurst(latlng){
+  if(useML && !mlmap.isStyleLoaded()){showErr('Map is still loading. Try again shortly.');return;}
   lastBurst=latlng; const [lat,lng]=latlng;
   const y=+$('#yield').value, a=+$('#alt').value, wx=$('#wx').value;
   const precip=+$('#precip').value, humid=+$('#humid').value;
 
-  addMarker(lat,lng);
+  burstMarkers.push(addMarker(lat,lng));
   const r20=turf.circle([lng,lat], ringKm(y,20), {steps:128});
   const r5 =turf.circle([lng,lat], ringKm(y,5), {steps:128});
   const r1 =turf.circle([lng,lat], ringKm(y,1), {steps:128});
@@ -224,10 +229,11 @@ function placeBurst(latlng){
 
 /* ===================== population ===================== */
 async function loadCounties(){
-  try{ const r=await fetch('counties.json',{cache:'no-store'}); if(r.ok){ counties=await r.json(); return; } }catch{}
+  // Only the bundled demo polygons are available in this revision.
   const tag=document.getElementById('countiesData'); if(tag) counties = JSON.parse(tag.textContent);
 }
 $('#popHeat').onchange=()=>{
+  if(useML && !mlmap.isStyleLoaded()){showErr('Map still loading');$('#popHeat').checked=false;return;}
   if(!counties){ alert('Counties still loading'); $('#popHeat').checked=false; return; }
   if($('#popHeat').checked){
     if(useML){
@@ -259,7 +265,7 @@ async function calcPopulation(){
       }
     }catch{}
   });
-  $('#popRead').textContent = `Population in effects: ${total.toLocaleString()}` + (details.length? ` — ${details.join(' • ')}`:'');
+  $('#popRead').textContent = `DEMO population (unvalidated polygons): ${total.toLocaleString()}` + (details.length? ` — ${details.join(' • ')}`:'');
 }
 
 /* ===================== wind HUD + ETA ===================== */
@@ -269,8 +275,8 @@ const HUD=$('#windHUD'), Hhead=$('#windHead'), Hrez=$('#windResize');
   const s=lsGet('HUDpos',{left:'10px',bottom:'10px',w:300,h:210});
   HUD.style.left=s.left; HUD.style.bottom=s.bottom||'10px'; HUD.style.width=s.w+'px'; HUD.style.height=s.h+'px';
   let drag=false,sx=0,sy=0,ox=0,oy=0;
-  Hhead.addEventListener('pointerdown',ev=>{drag=true;sx=ev.clientX;sy=ev.clientY; const r=HUD.getBoundingClientRect(); ox=r.left; oy=r.top; Hhead.setPointerCapture(ev.pointerId);});
-  Hhead.addEventListener('pointermove',ev=>{if(!drag)return; const dx=ev.clientX-sx, dy=ev.clientY-sy; HUD.style.left=(ox+dx)+'px'; HUD.style.top=(oy+dy)+'px'; HUD.style.bottom='auto';});
+  Hhead.addEventListener('pointerdown',ev=>{drag=true;sx=ev.clientX;sy=ev.clientY; const r=HUD.getBoundingClientRect(); const parent=HUD.parentElement.getBoundingClientRect();ox=r.left-parent.left;oy=r.top-parent.top; Hhead.setPointerCapture(ev.pointerId);});
+  Hhead.addEventListener('pointermove',ev=>{if(!drag)return; const dx=ev.clientX-sx, dy=ev.clientY-sy; HUD.style.left=clamp(ox+dx,0,Math.max(0,HUD.parentElement.clientWidth-HUD.offsetWidth))+'px'; HUD.style.top=clamp(oy+dy,0,Math.max(0,HUD.parentElement.clientHeight-HUD.offsetHeight))+'px'; HUD.style.bottom='auto';});
   Hhead.addEventListener('pointerup',()=>{drag=false; save();});
   let rez=false, rsx=0,rsy=0,rw=0,rh=0;
   Hrez.addEventListener('pointerdown',ev=>{rez=true;rsx=ev.clientX;rsy=ev.clientY; const r=HUD.getBoundingClientRect(); rw=r.width; rh=r.height; Hrez.setPointerCapture(ev.pointerId);});
@@ -319,27 +325,19 @@ if(toggleHudBtn){
   });
 }
 
-$('#btnGPS')?.addEventListener('click', async ()=>{
-  try{
-    const pos = await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(p=>res(p),e=>rej(e),{enableHighAccuracy:true,timeout:10000}));
-    myPos=[pos.coords.latitude,pos.coords.longitude];
-    addMarker(myPos[0],myPos[1],{color:'#22c55e'});
-    updateETAFromLast();
-  }catch{ showErr('GPS failed (permissions or no fix)'); }
-});
-function updateETAFromLast(){ if(lastBurst && myPos) updateETA(lastBurst, windDeg); }
-function updateETA(burstLatLng, brgDeg){
-  const [bLat,bLng]=burstLatLng; if(!myPos) return;
-  const [uLat,uLng]=myPos;
-  const dest = offsetOnEarth(bLat,bLng, 1000000, brgDeg, 0);
-  const line = turf.lineString([[bLng,bLat],[dest[1],dest[0]]]);
-  const pt = turf.point([uLng,uLat]);
-  const snapped = turf.nearestPointOnLine(line, pt);
-  const distKm = snapped.properties.location * 111.32;
-  if(windSpd<=0){ $('#hudEta').textContent='ETA to you: wind=0'; return; }
-  const mins = Math.max(0, Math.round((distKm*1000)/windSpd/60));
-  $('#hudEta').textContent = `ETA to you: ${mins} min`;
-  $('#hudLeave').textContent = `Leave-shelter est: ~${mins+420} min (rule-of-7/10)`;
+let locationMarker=null;
+async function requestLocation(){
+  try { const pos=await AppPlatform.locate(); myPos=[pos.coords.latitude,pos.coords.longitude];
+    if(locationMarker)locationMarker.remove(); locationMarker=addMarker(...myPos,{color:'#22c55e'}); flyTo(...myPos);
+    $('#weatherStatus').textContent='GPS fix · accuracy about '+Math.round(pos.coords.accuracy)+' m'; return true;
+  } catch(e){showErr(e.message);return false;}
+}
+$('#btnGPS').onclick=requestLocation;
+$('#locationTop').onclick=requestLocation;
+function updateETAFromLast(){ /* Arrival model awaits scientific validation. */ }
+function updateETA(){
+  $('#hudEta').textContent='Fallout arrival model not validated';
+  $('#hudLeave').textContent='No safe-to-leave time can be determined here.';
 }
 
 /* ===================== shelter finder ===================== */
@@ -359,8 +357,10 @@ $('#findShelter')?.addEventListener('click', async ()=>{
   if(!myPos){ alert('Tap “My Position (GPS)” first.'); return; }
   clearShelters();
   const R=+$('#radius').value; const samples=36;
+  if(!useML || !$('#terrainOn').checked){showErr('Terrain elevation is unavailable. No shelter ranking can be provided.');return;}
   let best=null, bestScore=-1;
   const centerEl = await getElevation(myPos[0],myPos[1]);
+  if(centerEl==null){showErr('Elevation tiles are not available here. No shelter ranking.');return;}
   for(let i=0;i<samples;i++){
     const brg=i*360/samples; const pt=offsetOnEarth(myPos[0],myPos[1], R, brg, 0); const lat=pt[0], lng=pt[1];
     const el = await getElevation(lat,lng);
@@ -372,14 +372,14 @@ $('#findShelter')?.addEventListener('click', async ()=>{
     const m = dotMarker(lat,lng,score>=2); shelterMarkers.push(m);
     if(score>bestScore){ bestScore=score; best={lat,lng,why}; }
   }
-  $('#shelterRead').textContent = best?(`Best nearby: ${best.lat.toFixed(5)}, ${best.lng.toFixed(5)} — ${best.why.join(', ')}`):('No strong terrain advantage; use hard cover and cross-wind routes.');
+  $('#shelterRead').textContent = best?(`Experimental sample: ${best.lat.toFixed(5)}, ${best.lng.toFixed(5)} — ${best.why.join(', ')}. Not a verified shelter.`):('No verified shelter information. Terrain samples do not establish protection.');
 });
 
 /* ===================== pins / waypoints ===================== */
 let pinMode=false, pins=[], pinIdCounter=1, pinsSelectedId=null;
 $('#pinMode')?.addEventListener('click', ()=>{ pinMode=!pinMode; $('#pinMode').classList.toggle('active',pinMode); if(pinMode){ addMode=false; $('#add').classList.remove('active'); } });
 $('#pinAddNow')?.addEventListener('click', ()=>{ const c = getMapCenter(); addPin(c.lat,c.lng); });
-$('#pinClearAll')?.addEventListener('click', ()=>{ pins.forEach(p=>p.marker.remove()); pins=[]; renderPinList(); });
+$('#pinClearAll')?.addEventListener('click', ()=>{ if(!confirm('Delete all saved pins on this device?'))return; pins.forEach(p=>p.marker.remove()); pins=[]; renderPinList(); });
 $('#homeCenter')?.addEventListener('click', ()=>centerOnPinType('home'));
 $('#workCenter')?.addEventListener('click', ()=>centerOnPinType('work'));
 $('#goSelected')?.addEventListener('click', ()=>{ const p=pins.find(x=>x.id===pinsSelectedId); if(!p) return alert('Select a pin in the list first.'); flyTo(p.lat,p.lng); });
@@ -389,16 +389,21 @@ function pinsHandleMapClick(lat,lng){ if(!pinMode) return false; addPin(lat,lng)
 
 function addPin(lat,lng){
   const type=$('#pinType').value, color=$('#pinColor').value;
-  const id=pinIdCounter++; const label=prompt('Label for pin?', type)||type;
-  const m = addMarker(lat,lng,{color});
-  const pin={id,lat,lng,type,color,label,marker:m,notes:''}; pins.push(pin);
+  const label=prompt('Label for pin?',type); if(label===null)return;
+  createSavedPin({lat,lng,type,color,label:label||type,notes:'',locked:true});
+  renderPinList(true);
+}
+function createSavedPin(data){
+  const id=pinIdCounter++, lat=data.lat,lng=data.lng,color=/^#[0-9a-f]{6}$/i.test(data.color)?data.color:'#22c55e';
+  const m=addMarker(lat,lng,{color});
+  const pin={...data,id,color,label:String(data.label||'Pin'),type:String(data.type||'custom'),notes:String(data.notes||''),locked:data.locked!==false,marker:m};pins.push(pin);
 
   if(useML){
-    m._m.setDraggable(true);
+    m._m.setDraggable(!pin.locked);
     m._m.on('dragend',ev=>{ const ll=ev.target.getLngLat(); pin.lng=ll.lng; pin.lat=ll.lat; renderPinList(false); });
     m.on('click',()=>editPin(pin.id));
   }else{
-    m._m.dragging.enable();
+    if(!pin.locked)m._m.dragging.enable();
     m._m.on('dragend',ev=>{ const ll=ev.target.getLatLng(); pin.lat=ll.lat; pin.lng=ll.lng; renderPinList(false); });
     m._m.on('click',()=>editPin(pin.id));
   }
@@ -418,19 +423,21 @@ function centerOnPinType(t){
   if(!p){ alert(`No ${t} pin yet.`); return; }
   flyTo(p.lat,p.lng);
 }
+function escapeHTML(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function renderPinList(scrollBottom=true){
   const box=$('#pinList'); if(!box) return;
+  lsSet('pins',pins.map(({marker,...data})=>data));
   if(pins.length===0){ box.innerHTML='<div class="note">No pins yet.</div>'; return; }
   box.innerHTML=pins.map(p=>`
     <div class="pin-item" data-id="${p.id}">
       <div>
         <span class="pin-swatch" style="background:${p.color}"></span>
-        <strong>${p.label}</strong> <span class="meta">(${p.type})</span>
+        <strong>${escapeHTML(p.label)}</strong> <span class="meta">(${escapeHTML(p.type)})</span>
         <div class="meta">${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}</div>
       </div>
       <div>
         <button class="smallbtn" data-act="go">Go</button>
-        <button class="smallbtn" data-act="edit">Edit</button>
+        <button class="smallbtn" data-act="edit">Edit</button><button class="smallbtn" data-act="lock">${p.locked?"Unlock":"Lock"}</button>
         <button class="smallbtn" data-act="del">Del</button>
       </div>
     </div>`).join('');
@@ -439,79 +446,46 @@ function renderPinList(scrollBottom=true){
     el.addEventListener('click',()=>{ pinsSelectedId=id; });
     el.querySelector('[data-act="go"]').onclick=(e)=>{ e.stopPropagation(); const p=pins.find(x=>x.id===id); flyTo(p.lat,p.lng); };
     el.querySelector('[data-act="edit"]').onclick=(e)=>{ e.stopPropagation(); editPin(id); };
+    el.querySelector('[data-act="lock"]').onclick=e=>{e.stopPropagation();const p=pins.find(p=>p.id===id);p.locked=!p.locked;if(useML)p.marker._m.setDraggable(!p.locked);else p.marker._m.dragging[p.locked?'disable':'enable']();renderPinList(false);};
     el.querySelector('[data-act="del"]').onclick=(e)=>{ e.stopPropagation(); deletePin(id); };
   });
   if(scrollBottom) box.scrollTop=box.scrollHeight;
 }
 
-/* ===================== LIVE WIND (Open-Meteo) ===================== */
-async function fetchLiveWind(lat, lng) {
-  const url =
-    `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}` +
-    `&longitude=${lng.toFixed(4)}&current=wind_speed_10m,wind_direction_10m`;
-
-  let r, j;
-  try {
-    r = await fetch(url, { cache: 'no-store' });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    j = await r.json();
-  } catch (err) {
-    $('#windSrc').innerHTML =
-      `<span class="src-err">Live wind failed</span> – ${String(err).slice(0,80)}`;
-    return false;
-  }
-
-  const cur = j.current;
-  if (!cur || typeof cur.wind_direction_10m !== 'number' || typeof cur.wind_speed_10m !== 'number') {
-    $('#windSrc').innerHTML = `<span class="src-err">Live wind: missing fields</span>`;
-    return false;
-  }
-
-  // Open-Meteo gives wind FROM; our plume travels TO:
-  const dirTo = (cur.wind_direction_10m + 180) % 360;
-  const spd   = Math.max(0, cur.wind_speed_10m);
-
-  applyLiveWind(dirTo, spd, `Open-Meteo`);
-  return true;
+/* ===================== weather controls ===================== */
+let weatherGeneration=0, weatherTimer=null;
+async function refreshWeather(){
+  const generation=++weatherGeneration;
+  const c=myPos?{lat:myPos[0],lng:myPos[1]}:getMapCenter();
+  $('#weatherStatus').textContent='Fetching Open-Meteo modeled weather…';
+  try{
+    const w=await AppPlatform.weather(c.lat,c.lng); if(generation!==weatherGeneration)return;
+    windDeg=w.to;windSpd=w.speed;drawCompass();
+    const d=w.current;
+    $('#tb-temp').textContent=d.temperature_2m+'°C';$('#tb-humidity').textContent=d.relative_humidity_2m+'%';$('#tb-precip').textContent=d.precipitation+' mm';
+    const message=`Open-Meteo modeled weather · ${d.time} UTC · ${myPos?'GPS':'Map center'} ${c.lat.toFixed(3)}, ${c.lng.toFixed(3)} · wind FROM ${w.from}° / TO ${w.to}° · ${w.speed} m/s · gusts ${d.wind_gusts_10m} m/s`;
+    $('#weatherStatus').textContent=message;$('#windSrc').textContent=message;
+  }catch(e){if(generation!==weatherGeneration)return;$('#weatherStatus').textContent='Weather update failed; wind values retained (not refreshed). '+e.message;$('#windSrc').textContent='Weather stale / unavailable';}
 }
+$('#liveWindNow').onclick=refreshWeather;
+$('#weatherAuto').onchange=e=>{clearInterval(weatherTimer);if(e.target.checked){refreshWeather();weatherTimer=setInterval(()=>{if(!document.hidden)refreshWeather();},600000);}};
+function manualWeather(){++weatherGeneration;clearInterval(weatherTimer);$('#weatherAuto').checked=false;$('#weatherStatus').textContent='Manual wind TO '+Math.round(windDeg)+'° · '+windSpd+' m/s';$('#windSrc').textContent='Manual wind';for(const id of ['tb-temp','tb-humidity','tb-precip'])$('#'+id).textContent='—';}
+for(const id of ['wind','windNum','windSpd','windNumSpd'])$('#'+id).addEventListener('input',manualWeather);
+comp?.addEventListener('pointerdown',manualWeather);
 
-function applyLiveWind(deg, spd, whereText) {
-  windDeg = deg;
-  windSpd = spd;
-  drawCompass();
-  updateETAFromLast();
-  const now = new Date();
-  const hh = String(now.getHours()).padStart(2,'0');
-  const mm = String(now.getMinutes()).padStart(2,'0');
-  $('#windSrc').innerHTML =
-    `<span class="src-ok">Live wind</span> ${deg.toFixed(0)}° (${bearingToCardinal(deg)}), ` +
-    `${spd.toFixed(1)} m/s • ${whereText} • ${hh}:${mm}`;
+/* ===================== startup and layout ===================== */
+for(const [button,target]of [['toggleControls','bar'],['togglePanels','stack']])$('#'+button).onclick=()=>{const el=$('#'+target);el.hidden=!el.hidden;$('#'+button).setAttribute('aria-expanded',String(!el.hidden));};
+function resizeMap(){if(useML)mlmap?.resize();else lmap?.invalidateSize();}
+new ResizeObserver(resizeMap).observe($('#mapwrap'));
+window.addEventListener('orientationchange',()=>setTimeout(resizeMap,200));
+function connection(){ $('#connectionStatus').textContent=navigator.onLine?'Online':'Offline · map tiles/weather may be unavailable'; }
+window.addEventListener('online',connection);window.addEventListener('offline',connection);connection();
+function restorePins(){
+ const saved=lsGet('pins',[]);if(!Array.isArray(saved))return;
+ for(const p of saved){if(!Number.isFinite(p.lat)||!Number.isFinite(p.lng)||Math.abs(p.lat)>90||Math.abs(p.lng)>180)continue;createSavedPin(p);}
+ renderPinList(false);
 }
-
-async function ensureGPS() {
-  if (myPos) return true;
-  try {
-    const pos = await new Promise((res, rej) =>
-      navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 10000 })
-    );
-    myPos = [pos.coords.latitude, pos.coords.longitude];
-    addMarker(myPos[0], myPos[1], { color: '#22c55e' });
-    return true;
-  } catch {
-    showErr('GPS needed for live wind');
-    return false;
-  }
-}
-
-$('#liveWindNow')?.addEventListener('click', async () => {
-  if (!(await ensureGPS())) return;
-  await fetchLiveWind(myPos[0], myPos[1]);
-});
-
-$('#liveWindOnce')?.addEventListener('click', async () => {
-  if (!myPos) { showErr('Tap “Use live wind (GPS)” first.'); return; }
-  await fetchLiveWind(myPos[0], myPos[1]);
-});
-
-/* ===================== boot small tasks ===================== */
-(async function(){ await loadCounties(); renderPinList(false); })();
+(async function(){
+ try{initMap(); if(useML){mlmap.on('load',()=>{toggleTerrain();toggleHillshade();});mlmap.on('error',()=>{showErr('A map source failed. Try Streets, disable terrain, or use 2D fallback in Controls.');});}else{for(const id of ['terrainOn','hillshadeOn','exagg'])$('#'+id).disabled=true;} await loadCounties();restorePins();resizeMap();}
+ catch(e){showErr('Startup failed: '+e.message);console.error(e);}
+})();
