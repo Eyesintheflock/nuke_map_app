@@ -1,6 +1,6 @@
 /* General application services; independent of simulation calculations. */
 window.AppPlatform = (() => {
-  const BUILD = '2026-09-15-1';
+  const BUILD = '2026-09-16-1';
   const storage = {
     get(key, fallback) { try { const value = localStorage.getItem(key); return value === null ? fallback : JSON.parse(value); } catch { return fallback; } },
     set(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch { return false; } }

@@ -26,3 +26,13 @@ assert 'app.js?v='+version in html and 'styles.css?v='+version in html
 json.loads(re.search(r'<script id="countiesData"[^>]*>(.*?)</script>',html,re.S)[1])
 assert not re.search(r'^(<<<<<<<|=======|>>>>>>>)',html+'\n'+app,re.M),'Unresolved merge marker'
 print('PASS: syntax, unique IDs/functions, DOM references, local assets, manifest, version alignment, county JSON')
+
+# Each page has a separate DOM and must reference real versioned assets.
+climate=Document();climate.feed((root/'climate.html').read_text())
+assert len(climate.ids)==len(set(climate.ids)), 'Duplicate climate page IDs'
+for asset in climate.assets: assert (root/asset).is_file(), f'Missing climate asset {asset}'
+for filename,ids in [('app/interface.js',p.ids),('app/climate-ui.js',climate.ids)]:
+ text=(root/filename).read_text()
+ for name in re.findall(r"(?:byId|el)\(['\"]([\w-]+)['\"]\)",text):assert name in ids,f'Missing {filename} DOM ID: {name}'
+assert 'app.js' not in (root/'climate.html').read_text(), 'Climate page must remain independent of simulation'
+print('PASS: climate/UI asset references and independent climate page')

@@ -46,3 +46,13 @@ No bundler or package installation is required. Node 22+ and Python 3 are suffic
 - Preview and production have different origins. Pins stay on the device and origin where they were saved; there is no cross-origin migration or cloud backup yet.
 
 See AUDIT.md for the next bounded development stages.
+
+## September 16 preview update
+
+- Map-first layout: one drawer at a time, phone-sized bottom drawers, and a Map only / Show tools pair. Optional weather chip, navigation controls and scale can be toggled independently. Display choices persist locally. Provider attribution is retained.
+- General seasonal weather is a separate `climate.html` page, reached through Weather → Explore seasonal weather. It has no simulation imports, does not apply values to the simulation, and does not calculate dispersal or fallout.
+- Choose a month, full/early/mid/late window, and 3/5/10 complete years. Hourly ERA5 archive data is aggregated into direction frequencies, calm share, mean speed/temperature/humidity, middle-80% ranges and wet-hour frequency. Source, sample coverage, selected coordinates and fetch time are shown.
+- Summaries are descriptive historical reanalysis, not event forecasts or standard 30-year climate normals. API errors never produce a partial multi-year result. Up to eight completed summaries are saved on-device for repeat/offline reading. The archive is fetched only on request; coordinates are disclosed to Open-Meteo when loading.
+- `app/interface.js` owns drawer/visibility state; `app/climate-data.js` and `app/climate-ui.js` own the independent climate view. Ten dependency-free Node tests now run in CI.
+
+Validation included an HTTP 200 archive request with expected units and a cross-origin request returning `Access-Control-Allow-Origin: *`. A JSDOM smoke check (map engine stubbed) passed for app boot, drawer exclusivity, visibility persistence, focus restore, HUD closing and DOM containment. Actual mobile rendering and real WebGL remain device-test items.

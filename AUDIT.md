@@ -53,3 +53,11 @@ These are source-inspection findings unless a test is explicitly listed. They ar
 5. Implement general routes, official public alerts and licensed offline references incrementally.
 
 Production is unchanged. Preview publication is agent-managed; CI currently validates/builds artifacts only. No automatic merge or production deployment has been enabled.
+
+## September 16 — recording review and interaction update
+
+Reviewed representative frames at 4, 18, 33, 49, 65 and 84 seconds of the supplied 94-second phone recording. The open controls, fixed weather box and long status strip leave a small map area. This revision moves controls into closable drawers and weather into its own panel. Map-only mode removes optional overlays and leaves an explicit restore button.
+
+Added a standalone climate summary page. Historical data is never passed to the effects model. No nuclear-capability inventory, biological-weapon functionality, or new fallout-spread/density calculations were added. Existing simulation calculations remain unchanged.
+
+Validation: 10 Node tests passed, structural checks passed for both pages, provider archive response/units/CORS verified, and a JSDOM smoke test with a stubbed map engine passed. These checks do not substitute for Android/iPad rendering and touch tests.

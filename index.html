@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
-<title>Nuke Effects – Terrain 3D + Population + Shelter HUD</title>
+<title>Preparedness Map · Preview</title>
 
 <!-- MapLibre (3D/WebGL) + Leaflet (fallback) -->
 <link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet">
@@ -14,15 +14,20 @@
 
 <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
 
-<link rel="stylesheet" href="styles.css?v=2026-09-15-1">
+<link rel="stylesheet" href="styles.css?v=2026-09-16-1">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#101114">
 </head>
 <body>
 <div id="app">
   <!-- Top control bar -->
-  <div id="appHeader"><button id="toggleControls" aria-expanded="false" aria-controls="bar">Controls</button><button id="togglePanels" aria-expanded="false" aria-controls="stack">Panels</button><button id="locationTop">My location</button><span id="buildStatus">Build 2026-09-15-1</span><span id="connectionStatus" role="status"></span></div>
-  <div id="bar" hidden>
+  <nav id="appHeader" aria-label="Map tools">
+    <button id="toggleControls" aria-expanded="false" aria-controls="bar">Controls</button>
+    <button id="togglePanels" aria-expanded="false" aria-controls="stack">Layers &amp; pins</button>
+    <button id="openWeather" aria-expanded="false" aria-controls="stack">Weather</button>
+    <button id="mapOnly" aria-pressed="false">Map only</button>
+  </nav>
+  <section id="bar" class="drawer" aria-label="Map controls" hidden><div class="drawer-head"><strong>Controls</strong><button type="button" data-close-drawer aria-label="Close controls">Close</button></div><div class="control-fields">
     <span class="label">Burst:</span>
     <select id="preset">
       <option value="custom">Custom</option>
@@ -37,7 +42,7 @@
     <label><input id="fallout" type="checkbox" checked> Fallout</label>
     <span class="label">WX</span>
     <select id="wx"><option value="dry">Dry</option><option value="rain">Rain</option><option value="snow">Snow</option></select>
-    <span class="label">Wind</span>
+    <span class="label">Wind TO</span>
     <input id="wind" type="number" min="0" max="359" step="1" value="90" style="width:70px">°
     <span class="label">Speed</span>
     <input id="windSpd" type="number" min="0" max="60" step="1" value="10" style="width:70px">m/s
@@ -47,28 +52,39 @@
     <button id="refreshTiles">Refresh tiles</button><a href="?leaf" style="color:#22d3ee">2D fallback</a>
     <span class="label">Basemap</span>
     <select id="basemap"><option value="auto" selected>Auto</option><option value="osm">OSM Streets</option><option value="sat">Satellite (Esri)</option><option value="topo">Topographic</option><option value="grid">No basemap (offline)</option></select>
-  </div>
+  </div></section>
 
   <!-- Map stack -->
   <div id="mapwrap">
     <div id="mlmap"></div>
     <div id="map"></div>
 
-    <!-- Compact top bar (overlays map; stays in sync with sidebar wind inputs) -->
-    <div id="topbar" aria-label="Map toolbar">
+    <button id="restoreUI" hidden>Show tools</button>
+    <div id="weatherChip" hidden aria-label="Weather summary">No weather fetched</div>
+    <!-- Right overlay stack -->
+    <section id="stack" class="drawer" aria-label="Map panels" hidden><div class="drawer-head"><strong id="drawerTitle">Layers &amp; pins</strong><button type="button" data-close-drawer aria-label="Close panels">Close</button></div>
+      <div class="panel" id="pDisplay"><header tabindex="0" role="button" aria-expanded="false">Display options <span>⌄</span></header><div class="content">
+      <p class="note">Choose what stays over the map. “Map only” hides all optional overlays; attribution stays visible.</p>
+      <label class="switch-row"><input id="showWeatherChip" type="checkbox">Small weather summary</label>
+      <label class="switch-row"><input id="showMapButtons" type="checkbox" checked>Zoom / compass controls</label>
+      <label class="switch-row"><input id="showScale" type="checkbox" checked>Distance scale</label>
+      <button id="locationTop">My location</button>
+      <p><span id="buildStatus">Build 2026-09-16-1</span> · <span id="connectionStatus" role="status"></span></p>
+      </div></div>
+      <div class="panel" id="pWeather"><header tabindex="0" role="button" aria-expanded="false">Current weather <span>⌄</span></header><div class="content"><div id="topbar" aria-label="Map toolbar">
       <div class="tb-left">
         <span class="pill">
           <span id="tb-wind-arrow" aria-hidden="true">🧭</span>
           TO <span id="tb-wind-deg">90°</span> ·
           <span id="tb-wind-speed">10 m/s</span>
         </span>
-        <span class="pill" title="Air temperature (placeholder)">
+        <span class="pill" title="Air temperature">
           🌡 <span id="tb-temp">—°</span>
         </span>
-        <span class="pill" title="Relative humidity (placeholder)">
+        <span class="pill" title="Relative humidity">
           💧 <span id="tb-humidity">—%</span>
         </span>
-        <span class="pill" title="Precipitation intensity (placeholder)">
+        <span class="pill" title="Precipitation">
           ☔ <span id="tb-precip">—</span>
         </span>
       </div>
@@ -77,13 +93,11 @@
         <button id="toggleWindHud" title="Show/hide wind HUD">HUD</button>
       </div>
     </div>
-
-    <!-- Wind HUD template (draggable/resizable control rendered inside the map) -->
-
-
-    <!-- Right overlay stack -->
-    <div id="stack" hidden>
-      <div class="panel open" id="pLegend">
+      <p id="weatherStatus" role="status">Manual wind · Weather not fetched</p>
+      <a id="seasonalLink" class="link-button" href="climate.html">Explore seasonal weather ↗</a>
+      <p class="note">Seasonal weather opens a separate climate summary. It does not change simulation inputs.</p>
+      </div></div>
+      <div class="panel" id="pLegend">
         <header><div>Legend</div><div>▾</div></header>
         <div class="content">
           <div class="row"><span class="badge b20">20 psi</span> severe collapse</div>
@@ -91,11 +105,11 @@
           <div class="row"><span class="badge b1">1 psi</span> light damage</div>
           <div class="row"><span class="badge bth">Thermal 3rd°</span> burns</div>
           <div class="row"><span class="badge bfo">Fallout</span> dose plume</div>
-          <div class="note">Tap any ring/plume for text and population.</div>
+          <div class="note">Existing effect geometry is illustrative and unvalidated.</div>
         </div>
       </div>
 
-      <div class="panel open" id="pTiles">
+      <div class="panel" id="pTiles">
         <header><div>Tiles / Terrain</div><div>▾</div></header>
         <div class="content">
           <div class="row">
@@ -163,7 +177,7 @@
             <button class="smallbtn" id="pinAddNow">Drop at map center</button>
             <button class="smallbtn" id="pinClearAll">Clear pins</button>
           </div>
-          <div class="note">Tip: turn on “Add pin (tap map)”, then tap the map. Drag a pin to move it. Tap a pin to edit.</div>
+          <div class="note">Tip: turn on “Add pin (tap map)”, then tap the map. Unlock a pin before dragging it. Tap a pin to edit.</div>
           <div class="pin-list" id="pinList"><div class="note">No pins yet.</div></div>
         </div>
       </div>
@@ -186,7 +200,7 @@
           <div id="advShow" class="note">Route/timer system not implemented in this preview.</div>
         </div>
       </div>
-    </div>
+    </section>
 
     <!-- Wind HUD -->
     <div id="windHUD" style="display:none">
@@ -209,7 +223,7 @@
       <div id="windResize" title="Resize"></div>
     </div>
 
-    <div id="weatherStatus" role="status">Manual wind · Weather not fetched</div><div id="err" class="err" role="alert"></div>
+    <div id="err" class="err" role="alert"></div>
   </div>
 </div>
 
@@ -236,7 +250,8 @@
 }
 </script>
 
-<script src="app/platform.js?v=2026-09-15-1"></script>
-<script src="app.js?v=2026-09-15-1"></script>
+<script src="app/platform.js?v=2026-09-16-1"></script>
+<script src="app.js?v=2026-09-16-1"></script>
+<script src="app/interface.js?v=2026-09-16-1"></script>
 </body>
 </html>

@@ -46,7 +46,10 @@ function webglOk(){
 
 /* ===================== map init ===================== */
 function initMap(){
-  const start=[45.85,-123.49];
+  const view=lsGet('mapView',null);
+  const valid=view && Number.isFinite(view.lat) && Number.isFinite(view.lng) && Math.abs(view.lat)<=85 && Math.abs(view.lng)<=180;
+  const start=valid?[view.lat,view.lng]:[45.85,-123.49];
+  const startZoom=valid&&Number.isFinite(view.zoom)?clamp(view.zoom,2,18):9;
 
   if(webglOk()){
     try {
@@ -66,7 +69,7 @@ function initMap(){
           {"id":"hillshade","type":"hillshade","source":"terrain-dem","layout":{"visibility":"none"},"paint":{"hillshade-exaggeration":0.6}}
         ]
       },
-      center:[start[1],start[0]], zoom:8.6, pitch:0
+      center:[start[1],start[0]], zoom:startZoom, pitch:0
     });
     mlmap.addControl(new maplibregl.NavigationControl({visualizePitch:true}),'top-left');
     mlmap.addControl(new maplibregl.ScaleControl({maxWidth:120,unit:'imperial'}));
@@ -81,7 +84,7 @@ function initMap(){
   if(!useML){
     $('#map').style.display='block';
     useML=false; $('#mlmap').style.display='none';
-    lmap=L.map('map', { renderer: L.canvas() }).setView(start,9);
+    lmap=L.map('map', { renderer: L.canvas() }).setView(start,startZoom);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OSM'}).addTo(lmap);
 
 
@@ -92,11 +95,6 @@ function initMap(){
   }
 }
 // Map startup occurs after state and controls have initialized.
-
-/* ===================== panel folding ===================== */
-for(const h of document.querySelectorAll('.panel header')){
-  h.addEventListener('click',()=>h.parentElement.classList.toggle('open'));
-}
 
 /* ===================== top bar handlers ===================== */
 $('#preset').onchange=e=>{ if(e.target.value!=='custom') $('#yield').value=e.target.value; };
@@ -284,7 +282,7 @@ const HUD=$('#windHUD'), Hhead=$('#windHead'), Hrez=$('#windResize');
   Hrez.addEventListener('pointerup',()=>{rez=false; save();});
   function save(){ const r=HUD.getBoundingClientRect(); lsSet('HUDpos',{left:HUD.style.left||r.left+'px',bottom:HUD.style.bottom||'10px',w:r.width,h:r.height}); }
   $('#windCenter').onclick=()=>{ HUD.style.left='10px'; HUD.style.bottom='10px'; HUD.style.top='auto'; save(); };
-  $('#windHide').onclick=()=>{ HUD.style.display='none'; };
+
 })();
 const comp=$('#windCompass'), ctx=comp?.getContext('2d');
 function drawCompass(){
@@ -314,16 +312,6 @@ $('#windNum').addEventListener('input',e=>{ windDeg=+e.target.value; drawCompass
 $('#windSpd').addEventListener('input',e=>{ windSpd=+e.target.value; drawCompass(); updateETAFromLast(); });
 $('#windNumSpd').addEventListener('input',e=>{ windSpd=+e.target.value; drawCompass(); updateETAFromLast(); });
 drawCompass();
-
-const toggleHudBtn = document.getElementById('toggleWindHud');
-if(toggleHudBtn){
-  toggleHudBtn.addEventListener('click', ()=>{
-    const hud = document.getElementById('windHUD');
-    const on = hud.style.display !== 'none';
-    hud.style.display = on ? 'none' : 'block';
-    toggleHudBtn.classList.toggle('active', !on);
-  });
-}
 
 let locationMarker=null;
 async function requestLocation(){
@@ -474,7 +462,6 @@ for(const id of ['wind','windNum','windSpd','windNumSpd'])$('#'+id).addEventList
 comp?.addEventListener('pointerdown',manualWeather);
 
 /* ===================== startup and layout ===================== */
-for(const [button,target]of [['toggleControls','bar'],['togglePanels','stack']])$('#'+button).onclick=()=>{const el=$('#'+target);el.hidden=!el.hidden;$('#'+button).setAttribute('aria-expanded',String(!el.hidden));};
 function resizeMap(){if(useML)mlmap?.resize();else lmap?.invalidateSize();}
 new ResizeObserver(resizeMap).observe($('#mapwrap'));
 window.addEventListener('orientationchange',()=>setTimeout(resizeMap,200));
@@ -486,6 +473,7 @@ function restorePins(){
  renderPinList(false);
 }
 (async function(){
- try{initMap(); if(useML){mlmap.on('load',()=>{toggleTerrain();toggleHillshade();});mlmap.on('error',()=>{showErr('A map source failed. Try Streets, disable terrain, or use 2D fallback in Controls.');});}else{for(const id of ['terrainOn','hillshadeOn','exagg'])$('#'+id).disabled=true;} await loadCounties();restorePins();resizeMap();}
+ try{initMap(); if(useML){mlmap.on('load',()=>{toggleTerrain();toggleHillshade();});mlmap.on('error',()=>{showErr('A map source failed. Try Streets, disable terrain, or use 2D fallback in Controls.');});}else{for(const id of ['terrainOn','hillshadeOn','exagg'])$('#'+id).disabled=true;} await loadCounties();restorePins();resizeMap();
+ const engine=useML?mlmap:lmap;engine.on('moveend',()=>{const c=getMapCenter();lsSet('mapView',{...c,zoom:engine.getZoom()});});}
  catch(e){showErr('Startup failed: '+e.message);console.error(e);}
 })();
