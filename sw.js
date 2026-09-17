@@ -1,84 +1,33 @@
-// --- VERSION: bump this every time you deploy ---
-const CACHE_VERSION = 'v2025-09-07-2';
-const CACHE_NAME = `nuke_map_app_${CACHE_VERSION}`;
-
-// Add/adjust the list of assets you want to precache.
-// Tip: include the ?v= cache-buster that you use in index.html.
-const CORE_ASSETS = [
-  '/',                    // GitHub Pages will serve index.html for /
-  '/nuke_map_app/',       // project base path (keeps Pages happy)
-  '/nuke_map_app/index.html',
-  '/nuke_map_app/app.js?v=2025-09-07-2',
-  '/nuke_map_app/manifest.webmanifest',
-  '/nuke_map_app/icon-192.png',
-  '/nuke_map_app/icon-512.png',
-];
-
-// INSTALL: cache core files
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS))
-  );
-  // Activate immediately after install
-  self.skipWaiting();
+/* Scope-relative shell cache; never caches weather or third-party map tiles. */
+const CACHE_VERSION = 'v2026-09-17-1';
+const SCOPE = new URL(self.registration.scope);
+const CACHE_PREFIX = `nuke_map_app_${SCOPE.pathname}_`;
+const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
+const CORE_ASSETS = ['./','index.html','app.js?v=2026-09-17-1','app/platform.js?v=2026-09-17-1','app/interface.js?v=2026-09-17-1','app/inspect.js?v=2026-09-17-1','climate.html','climate.css?v=2026-09-17-1','app/climate-data.js?v=2026-09-17-1','app/climate-ui.js?v=2026-09-17-1','styles.css?v=2026-09-17-1','manifest.webmanifest','Icon-192.png','Icon-512.png'].map(p=>new URL(p,SCOPE).href);
+self.addEventListener('install',event=>{
+  event.waitUntil(caches.open(CACHE_NAME).then(cache=>cache.addAll(CORE_ASSETS)).then(()=>self.skipWaiting()));
 });
-
-// ACTIVATE: delete old caches
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    (async () => {
-      const keys = await caches.keys();
-      await Promise.all(
-        keys
-          .filter((k) => k.startsWith('nuke_map_app_') && k !== CACHE_NAME)
-          .map((k) => caches.delete(k))
-      );
-      // Take control of open clients
-      await self.clients.claim();
-    })()
-  );
+self.addEventListener('activate',event=>{
+  event.waitUntil((async()=>{
+    const keys=await caches.keys();
+    await Promise.all(keys.filter(k=>k!==CACHE_NAME && (k.startsWith(CACHE_PREFIX) || (SCOPE.pathname==='/nuke_map_app/' && /^nuke_map_app_v/.test(k)))).map(k=>caches.delete(k)));
+    await self.clients.claim();
+  })());
 });
-
-// FETCH strategy:
-// - HTML: network-first (to pick up new deploys)
-// - Other static assets: cache-first
-self.addEventListener('fetch', (event) => {
-  const req = event.request;
-
-  // Only handle same-origin requests
-  const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return;
-
-  // HTML documents -> network first
-  if (req.mode === 'navigate' || (req.headers.get('accept') || '').includes('text/html')) {
-    event.respondWith(
-      (async () => {
-        try {
-          const fresh = await fetch(req, { cache: 'no-store' });
-          // Optionally update cache for nav requests
-          const cache = await caches.open(CACHE_NAME);
-          cache.put(req, fresh.clone());
-          return fresh;
-        } catch {
-          const cache = await caches.open(CACHE_NAME);
-          const cached = await cache.match(req);
-          return cached || cache.match('/nuke_map_app/index.html');
-        }
-      })()
-    );
-    return;
-  }
-
-  // Static assets -> cache first
-  event.respondWith(
-    (async () => {
-      const cache = await caches.open(CACHE_NAME);
-      const cached = await cache.match(req);
-      if (cached) return cached;
-      const fresh = await fetch(req);
-      // Cache a clone for next time
-      cache.put(req, fresh.clone());
-      return fresh;
-    })()
-  );
+self.addEventListener('fetch',event=>{
+  const req=event.request,url=new URL(req.url);
+  if(req.method!=='GET'||url.origin!==SCOPE.origin||!url.pathname.startsWith(SCOPE.pathname))return;
+  const navigation=req.mode==='navigate';
+  if(!navigation&&!CORE_ASSETS.includes(url.href))return;
+  event.respondWith((async()=>{
+    const cache=await caches.open(CACHE_NAME);
+    try{
+      const response=await fetch(req,{cache:'no-cache'});
+      if(!response.ok)throw new Error('HTTP '+response.status);
+      await cache.put(req,response.clone());return response;
+    }catch{
+      const cached=await cache.match(req) || (navigation && await cache.match(url.origin+url.pathname)) || (navigation && await cache.match(new URL('index.html',SCOPE).href));
+      return cached || new Response('Unavailable offline. Open this app online once to cache its shell.',{status:503,headers:{'Content-Type':'text/plain'}});
+    }
+  })());
 });
