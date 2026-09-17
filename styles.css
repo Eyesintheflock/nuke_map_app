@@ -8,3 +8,14 @@
 #restoreUI{position:absolute;top:10px;right:10px;z-index:40;background:#112737eb;box-shadow:0 2px 10px #0006}.map-only #appHeader{display:none}#app.map-only{grid-template-rows:minmax(0,1fr)}.map-only #bar,.map-only #stack,.map-only #windHUD{display:none!important}.hide-map-buttons .maplibregl-ctrl-group,.hide-map-buttons .leaflet-control-zoom{display:none}.hide-map-scale .maplibregl-ctrl-scale,.hide-map-scale .leaflet-control-scale{display:none}.err{position:absolute;left:10px;bottom:35px;max-width:calc(100% - 20px);background:#7d2730;color:#fff;padding:10px 14px;border-radius:8px;display:none;z-index:50}.maplibregl-popup-content,.leaflet-popup-content-wrapper{color:#14232f}
 @media(max-width:640px){#appHeader{gap:4px}#appHeader button{font-size:13px;padding:6px}.drawer,#bar,#stack{position:fixed;left:0;right:0;top:auto;bottom:calc(24px + env(safe-area-inset-bottom));width:100%;max-height:55dvh;border-radius:16px 16px 0 0;border-bottom:0;scrollbar-gutter:auto}.drawer-head{padding:9px 14px}.drawer-head strong{font-size:17px}.panel .content{padding:12px 14px}.control-fields{padding:14px}.map-only #restoreUI{font-size:14px}#windHUD{max-height:55dvh}}
 @media(max-height:480px){.drawer,#bar,#stack{top:58px;bottom:8px;left:auto;right:8px;width:min(420px,70vw);max-height:none;border-radius:12px}.drawer-head{padding:6px 10px}}
+/* Readable, touch-friendly map inspection. */
+.terrain-dot{width:36px;height:36px;border:2px solid white;border-radius:50%;background:#2563eb;color:white;padding:0;font-weight:700;box-shadow:0 1px 6px #0008}
+.map-info{color:#122234;max-height:45dvh;overflow:auto;font:14px/1.45 system-ui;overflow-wrap:anywhere}
+.map-info h3{margin:0 22px 8px 0}.map-info p{white-space:pre-line}.map-info button{background:#164e63;color:white;margin:4px;padding:10px;border-radius:6px}
+.maplibregl-popup-close-button{font-size:24px;min-width:36px;min-height:36px;color:#122234}
+#windMotion,.destination-arrow{width:44px;height:44px;text-align:center;font-size:32px;margin:12px auto;color:#0891b2}
+#windMotion span,.destination-arrow span{display:block;animation:direction-pulse 1.4s ease-in-out infinite}
+#windMotion.paused span{animation:none}
+@keyframes direction-pulse{0%,100%{translate:0 3px;opacity:.65}50%{translate:0 -3px;opacity:1}}
+@media(prefers-reduced-motion:reduce){#windMotion span,.destination-arrow span{animation:none}}
+.map-only .maplibregl-popup,.map-only .leaflet-popup{display:none}

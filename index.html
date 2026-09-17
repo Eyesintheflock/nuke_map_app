@@ -14,7 +14,7 @@
 
 <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
 
-<link rel="stylesheet" href="styles.css?v=2026-09-16-1">
+<link rel="stylesheet" href="styles.css?v=2026-09-17-1">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#101114">
 </head>
@@ -69,7 +69,7 @@
       <label class="switch-row"><input id="showMapButtons" type="checkbox" checked>Zoom / compass controls</label>
       <label class="switch-row"><input id="showScale" type="checkbox" checked>Distance scale</label>
       <button id="locationTop">My location</button>
-      <p><span id="buildStatus">Build 2026-09-16-1</span> · <span id="connectionStatus" role="status"></span></p>
+      <p><span id="buildStatus">Build 2026-09-17-1</span> · <span id="connectionStatus" role="status"></span></p>
       </div></div>
       <div class="panel" id="pWeather"><header tabindex="0" role="button" aria-expanded="false">Current weather <span>⌄</span></header><div class="content"><div id="topbar" aria-label="Map toolbar">
       <div class="tb-left">
@@ -93,7 +93,7 @@
         <button id="toggleWindHud" title="Show/hide wind HUD">HUD</button>
       </div>
     </div>
-      <p id="weatherStatus" role="status">Manual wind · Weather not fetched</p>
+      <label><input id="animateWind" type="checkbox" checked> Animate wind indicator</label><div id="windMotion" aria-label="Wind travel direction"><span>↑</span></div><p class="note">Arrow points TO the displayed compass bearing (north up). Motion is illustrative, not fallout transport or measured particle speed.</p><p id="weatherStatus" role="status">Manual wind · Weather not fetched</p>
       <a id="seasonalLink" class="link-button" href="climate.html">Explore seasonal weather ↗</a>
       <p class="note">Seasonal weather opens a separate climate summary. It does not change simulation inputs.</p>
       </div></div>
@@ -105,7 +105,7 @@
           <div class="row"><span class="badge b1">1 psi</span> light damage</div>
           <div class="row"><span class="badge bth">Thermal 3rd°</span> burns</div>
           <div class="row"><span class="badge bfo">Fallout</span> dose plume</div>
-          <div class="note">Existing effect geometry is illustrative and unvalidated.</div>
+          <label><input id="inspectEnabled" type="checkbox" checked> Tap map for overlay details</label><div class="note">Existing effect geometry is illustrative and unvalidated.</div>
         </div>
       </div>
 
@@ -137,7 +137,7 @@
       </div>
 
       <div class="panel" id="pShelter">
-        <header><div>Shelter Finder (terrain-aware)</div><div>▾</div></header>
+        <header><div>Cover guidance & terrain</div><div>▾</div></header>
         <div class="content">
           <div class="row">
             <button class="smallbtn" id="btnGPS">My Position (GPS)</button>
@@ -149,11 +149,11 @@
             </select>
           </div>
           <div class="row">
-            <button class="smallbtn" id="findShelter">Suggest</button>
+            <button class="smallbtn" id="findShelter">Inspect terrain</button>
             <button class="smallbtn" id="clearShelter">Clear</button>
           </div>
-          <div class="note">Experimental terrain samples only. Color does not establish blast shielding, fallout protection, accessibility, or shelter suitability.</div>
-          <div id="shelterRead" class="note">—</div>
+          <div class="note">Numbered blue points are elevation samples, not shelters. Tap each for its measurements. Search uses your last GPS fix or map center.</div>
+          <p class="note">For a radiation emergency, get inside a building, move to a basement or interior, and follow official instructions. Terrain dots cannot verify protection.</p><a href="https://www.cdc.gov/radiation-emergencies/response/get-inside.html" target="_blank" rel="noopener">CDC: getting inside</a><div id="shelterRead" class="note">—</div>
         </div>
       </div>
 
@@ -250,8 +250,9 @@
 }
 </script>
 
-<script src="app/platform.js?v=2026-09-16-1"></script>
-<script src="app.js?v=2026-09-16-1"></script>
-<script src="app/interface.js?v=2026-09-16-1"></script>
+<script src="app/platform.js?v=2026-09-17-1"></script>
+<script src="app.js?v=2026-09-17-1"></script>
+<script src="app/inspect.js?v=2026-09-17-1"></script>
+<script src="app/interface.js?v=2026-09-17-1"></script>
 </body>
 </html>

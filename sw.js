@@ -1,9 +1,9 @@
 /* Scope-relative shell cache; never caches weather or third-party map tiles. */
-const CACHE_VERSION = 'v2026-09-16-1';
+const CACHE_VERSION = 'v2026-09-17-1';
 const SCOPE = new URL(self.registration.scope);
 const CACHE_PREFIX = `nuke_map_app_${SCOPE.pathname}_`;
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
-const CORE_ASSETS = ['./','index.html','app.js?v=2026-09-16-1','app/platform.js?v=2026-09-16-1','app/interface.js?v=2026-09-16-1','climate.html','climate.css?v=2026-09-16-1','app/climate-data.js?v=2026-09-16-1','app/climate-ui.js?v=2026-09-16-1','styles.css?v=2026-09-16-1','manifest.webmanifest','Icon-192.png','Icon-512.png'].map(p=>new URL(p,SCOPE).href);
+const CORE_ASSETS = ['./','index.html','app.js?v=2026-09-17-1','app/platform.js?v=2026-09-17-1','app/interface.js?v=2026-09-17-1','app/inspect.js?v=2026-09-17-1','climate.html','climate.css?v=2026-09-17-1','app/climate-data.js?v=2026-09-17-1','app/climate-ui.js?v=2026-09-17-1','styles.css?v=2026-09-17-1','manifest.webmanifest','Icon-192.png','Icon-512.png'].map(p=>new URL(p,SCOPE).href);
 self.addEventListener('install',event=>{
   event.waitUntil(caches.open(CACHE_NAME).then(cache=>cache.addAll(CORE_ASSETS)).then(()=>self.skipWaiting()));
 });

@@ -76,7 +76,7 @@ function initMap(){
 
     mlmap.on('click', e=>{
       if(pinsHandleMapClick(e.lngLat.lat, e.lngLat.lng)) return;
-      if(addMode){ placeBurst([e.lngLat.lat, e.lngLat.lng]); addMode=false; $('#add').classList.remove('active'); }
+      if(addMode){ placeBurst([e.lngLat.lat,e.lngLat.lng]);addMode=false;$('#add').classList.remove('active');return;} inspectMapPoint(e.lngLat.lat,e.lngLat.lng);
     });
 
     } catch(error) { console.warn('WebGL startup failed; using Leaflet',error); try{mlmap?.remove();}catch{} useML=false; }
@@ -90,7 +90,7 @@ function initMap(){
 
     lmap.on('click', e=>{
       if(pinsHandleMapClick(e.latlng.lat, e.latlng.lng)) return;
-      if(addMode){ placeBurst([e.latlng.lat, e.latlng.lng]); addMode=false; $('#add').classList.remove('active'); }
+      if(addMode){placeBurst([e.latlng.lat,e.latlng.lng]);addMode=false;$('#add').classList.remove('active');return;} inspectMapPoint(e.latlng.lat,e.latlng.lng);
     });
   }
 }
@@ -193,7 +193,7 @@ function clearMap(){
     else { try{ lmap.removeLayer(popHeatLayer);}catch{} }
     popHeatLayer=null;
   }
-  shelterMarkers.forEach(m=>m.remove && m.remove()); shelterMarkers=[];
+  clearShelters();
   $('#popRead').textContent='Population in current effects: —';
   $('#shelterRead').textContent='—';
 }
@@ -330,37 +330,31 @@ function updateETA(){
 
 /* ===================== shelter finder ===================== */
 async function getElevation(lat,lng){ if(!useML) return null; try{ return mlmap.queryTerrainElevation({lng,lat}); }catch{ return null; } }
-function dotMarker(lat,lng,ok=true){
-  if(useML){
-    const el=document.createElement('div'); el.style.width='10px'; el.style.height='10px'; el.style.borderRadius='50%';
-    el.style.border='2px solid #0f172a'; el.style.background= ok?'#22c55e':'#f59e0b';
-    return new maplibregl.Marker({element:el}).setLngLat([lng,lat]).addTo(mlmap);
-  }else{
-    const c= ok?'#22c55e':'#f59e0b'; return L.circleMarker([lat,lng],{radius:6,color:'#0f172a',fillColor:c,fillOpacity:1,weight:2}).addTo(lmap);
-  }
+let terrainGeneration=0;
+function dotMarker(lat,lng,detail){
+  const el=document.createElement('button');el.className='terrain-dot';el.textContent=detail.number;
+  el.title='Terrain sample '+detail.number;el.setAttribute('aria-label',el.title);
+  el.onclick=e=>{e.stopPropagation();showMapInfo(lat,lng,'Terrain sample '+detail.number,
+    `Elevation: ${Math.round(detail.elevation)} m. Difference from search origin: ${detail.delta>=0?'+':''}${Math.round(detail.delta)} m. Sample distance: ${detail.distance} m.`,
+    'Source: loaded map DEM. Elevation alone cannot establish shielding, fallout protection, a building, or public access. This is not a recommended destination.');};
+  return new maplibregl.Marker({element:el}).setLngLat([lng,lat]).addTo(mlmap);
 }
-function clearShelters(){ shelterMarkers.forEach(m=>m.remove && m.remove()); shelterMarkers=[]; $('#shelterRead').textContent='—'; }
-$('#clearShelter')?.addEventListener('click', clearShelters);
-$('#findShelter')?.addEventListener('click', async ()=>{
-  if(!myPos){ alert('Tap “My Position (GPS)” first.'); return; }
-  clearShelters();
-  const R=+$('#radius').value; const samples=36;
-  if(!useML || !$('#terrainOn').checked){showErr('Terrain elevation is unavailable. No shelter ranking can be provided.');return;}
-  let best=null, bestScore=-1;
-  const centerEl = await getElevation(myPos[0],myPos[1]);
-  if(centerEl==null){showErr('Elevation tiles are not available here. No shelter ranking.');return;}
-  for(let i=0;i<samples;i++){
-    const brg=i*360/samples; const pt=offsetOnEarth(myPos[0],myPos[1], R, brg, 0); const lat=pt[0], lng=pt[1];
-    const el = await getElevation(lat,lng);
-    let score=0, why=[];
-    if(centerEl!=null && el!=null){ const delta = el-centerEl; if(delta<-3){ score+=2; why.push('lower ground'); } if(delta>4){ score-=1; why.push('ridge'); } }
-    const rel = Math.abs((((brg - windDeg + 540)%360)-180));
-    if(rel<100){ score+=2; why.push('leeward'); }
-    if(rel<15){ score-=2; why.push('downwind centerline'); }
-    const m = dotMarker(lat,lng,score>=2); shelterMarkers.push(m);
-    if(score>bestScore){ bestScore=score; best={lat,lng,why}; }
+function clearShelters(){ terrainGeneration++;shelterMarkers.forEach(m=>m.remove());shelterMarkers=[];$('#shelterRead').textContent='—'; }
+$('#clearShelter')?.addEventListener('click',clearShelters);
+$('#findShelter')?.addEventListener('click',async()=>{
+  clearShelters();const generation=terrainGeneration;
+  if(!useML||!$('#terrainOn').checked){showErr('Enable 3D terrain to inspect loaded elevation samples.');return;}
+  const c=getMapCenter(),origin=myPos||[c.lat,c.lng],R=+$('#radius').value;
+  const centerEl=await getElevation(...origin);
+  if(!Number.isFinite(centerEl)){showErr('Elevation is unavailable here. Try again after terrain loads.');return;}
+  let missing=0;
+  for(let i=0;i<12;i++){
+    const pt=offsetOnEarth(origin[0],origin[1],R,i*30,0),el=await getElevation(...pt);
+    if(generation!==terrainGeneration)return;
+    if(!Number.isFinite(el)){missing++;continue;}
+    shelterMarkers.push(dotMarker(...pt,{number:i+1,elevation:el,delta:el-centerEl,distance:R}));
   }
-  $('#shelterRead').textContent = best?(`Experimental sample: ${best.lat.toFixed(5)}, ${best.lng.toFixed(5)} — ${best.why.join(', ')}. Not a verified shelter.`):('No verified shelter information. Terrain samples do not establish protection.');
+  $('#shelterRead').textContent=`${shelterMarkers.length} numbered samples around ${myPos?'last GPS fix':'map center'}; ${missing} unavailable. Tap a number for elevation and limitations. No safety ranking.`;
 });
 
 /* ===================== pins / waypoints ===================== */
@@ -389,11 +383,11 @@ function createSavedPin(data){
   if(useML){
     m._m.setDraggable(!pin.locked);
     m._m.on('dragend',ev=>{ const ll=ev.target.getLngLat(); pin.lng=ll.lng; pin.lat=ll.lat; renderPinList(false); });
-    m.on('click',()=>editPin(pin.id));
+    m.on('click',e=>{e.stopPropagation();showPinInfo(pin);});
   }else{
     if(!pin.locked)m._m.dragging.enable();
     m._m.on('dragend',ev=>{ const ll=ev.target.getLatLng(); pin.lat=ll.lat; pin.lng=ll.lng; renderPinList(false); });
-    m._m.on('click',()=>editPin(pin.id));
+    m._m.on('click',e=>{e.stopPropagation();showPinInfo(pin);});
   }
   renderPinList(true);
 }
